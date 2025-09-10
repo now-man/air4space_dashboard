@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-// MODIFIED: 빠져있던 ReferenceArea를 import 목록에 추가했습니다.
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceArea, BarChart, Bar, Cell, PieChart, Pie } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceArea, BarChart, Bar, Cell, PieChart, Pie, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
 import { DayPicker } from 'react-day-picker';
 import { ko } from 'date-fns/locale';
-import { Zap, Settings, ShieldAlert, BotMessageSquare, Plus, Trash2, Save, ArrowLeft, UploadCloud, TestTube2, BrainCircuit, Eraser, Lightbulb, RefreshCw, PlayCircle, MapPin, Edit3, Compass, Activity, Calendar as CalendarIcon, MoreVertical, X, Edit, Home, BarChart3, Target } from 'lucide-react';
+import { Zap, Settings, ShieldAlert, BotMessageSquare, Plus, Trash2, Save, ArrowLeft, UploadCloud, TestTube2, BrainCircuit, Eraser, Lightbulb, RefreshCw, PlayCircle, MapPin, Edit3, Compass, Activity, Calendar as CalendarIcon, MoreVertical, X, Edit, Home, BarChart3, Target, Clock, Sunrise, Sunset, Moon } from 'lucide-react';
 import { MapContainer, TileLayer, CircleMarker, Tooltip as LeafletTooltip, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'react-day-picker/dist/style.css';
@@ -54,12 +53,16 @@ export default function App() {
             const parsedData = parseCSV(csvText);
             if (parsedData.length === 0) throw new Error('CSV data is empty or invalid.');
             
-            const formattedData = parsedData.map(d => ({
-                timestamp: new Date(d.time).getTime(),
-                timeLabel: new Date(d.time).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }),
-                predicted_error: parseFloat(d.gnss_error) || 0,
-                tec: parseFloat(d.tec) || 0
-            })).sort((a, b) => a.timestamp - b.timestamp);
+            const formattedData = parsedData.map(d => {
+                const timestamp = new Date(d.time).getTime();
+                if (isNaN(timestamp)) return null; // Invalid date format
+                return {
+                    timestamp,
+                    timeLabel: new Date(timestamp).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }),
+                    predicted_error: parseFloat(d.gnss_error) || 0,
+                    tec: parseFloat(d.tec) || 0
+                }
+            }).filter(Boolean).sort((a, b) => a.timestamp - b.timestamp);
 
             setAllForecastData(formattedData);
             setForecastStatus({ isLoading: false, error: null });
@@ -85,7 +88,7 @@ export default function App() {
       case 'settings': return <SettingsView profile={unitProfile} setProfile={setUnitProfile} logs={missionLogs} UNIT_DATA={UNIT_DATA} goBack={() => setActiveView('dashboard')} />;
       case 'feedback': return <FeedbackView equipmentList={unitProfile.equipment} onSubmit={handleFeedbackSubmit} goBack={() => setActiveView('dashboard')} />;
       case 'dev': return <DeveloperTestView setLogs={setMissionLogs} profile={unitProfile} initialProfile={initialProfile} goBack={() => setActiveView('dashboard')} />;
-      case 'analysis': return <AnalysisView logs={missionLogs} profile={unitProfile} goBack={() => setActiveView('dashboard')} />;
+      case 'analysis': return <AnalysisView logs={missionLogs} profile={unitProfile} />;
       default: return <DashboardView profile={unitProfile} allForecastData={allForecastData} forecastStatus={forecastStatus} logs={missionLogs} deleteLog={deleteLog} todoList={todoList} addTodo={addTodo} updateTodo={updateTodo} deleteTodo={deleteTodo} />;
     }
   };
@@ -116,23 +119,30 @@ const Header = ({setActiveView, activeView}) => {
 
 // --- Dashboard Sub-components ---
 const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold }) => {
-    const [timeRange, setTimeRange] = useState(48); // in hours
     const [visibleData, setVisibleData] = useState({ gnss: true, tec: true });
+
+    // Set default time range on component mount
+    const [timeRange, setTimeRange] = useState(() => {
+        if (allForecastData && allForecastData.length > 0) {
+            const first = allForecastData[0].timestamp;
+            const last = allForecastData[allForecastData.length - 1].timestamp;
+            return { start: first, end: last };
+        }
+        const now = new Date();
+        const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        return { start: yesterday.getTime(), end: now.getTime() };
+    });
+    
+    // Update default range when data arrives
+    useEffect(() => {
+        if (allForecastData && allForecastData.length > 0) {
+            setTimeRange({ start: allForecastData[0].timestamp, end: allForecastData[allForecastData.length - 1].timestamp });
+        }
+    }, [allForecastData]);
 
     const displayData = useMemo(() => {
         if (!allForecastData || allForecastData.length === 0) return [];
-        const now = new Date().getTime();
-        const rangeMs = timeRange * 60 * 60 * 1000;
-        
-        let closestPoint = allForecastData.reduce((prev, curr) => 
-            Math.abs(curr.timestamp - now) < Math.abs(prev.timestamp - now) ? curr : prev
-        );
-        const centerTime = closestPoint.timestamp;
-
-        const startTime = centerTime - (rangeMs / 2);
-        const endTime = centerTime + (rangeMs / 2);
-
-        return allForecastData.filter(d => d.timestamp >= startTime && d.timestamp <= endTime);
+        return allForecastData.filter(d => d.timestamp >= timeRange.start && d.timestamp <= timeRange.end);
     }, [allForecastData, timeRange]);
     
     const nowTimestamp = new Date().getTime();
@@ -143,6 +153,7 @@ const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold })
             <div style={{width: '100%', height: 250}}>
                 {forecastStatus.isLoading ? (<div className="flex items-center justify-center h-full text-gray-400">데이터 로딩 중...</div>)
                  : forecastStatus.error ? (<div className="flex items-center justify-center h-full text-red-400">{forecastStatus.error}</div>)
+                 : displayData.length === 0 ? (<div className="flex items-center justify-center h-full text-gray-400">선택된 시간 범위에 데이터가 없습니다.</div>)
                  : (<ResponsiveContainer width="100%" height="100%">
                      <LineChart data={displayData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" />
@@ -153,21 +164,21 @@ const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold })
                         <Legend />
                         {visibleData.gnss && <Line yAxisId="left" dataKey="predicted_error" name="GNSS 오차" stroke="#F56565" dot={false} />}
                         {visibleData.tec && <Line yAxisId="right" dataKey="tec" name="TEC" stroke="#4299E1" dot={false} />}
-                        <ReferenceLine yAxisId="left" y={activeUnitThreshold} label={{ value: "부대 임계값", fill: "#4FD1C5" }} stroke="#4FD1C5" strokeDasharray="4 4" />
-                        {/* MODIFIED: Conditionally render the ReferenceLine for "now" */}
-                        {displayData && displayData.length > 0 && <ReferenceLine x={nowTimestamp} stroke="#fbbf24" strokeWidth={2} label={{ value: '현재', position: 'insideTop', fill: '#fbbf24' }} />}
+                        {visibleData.gnss && <ReferenceLine yAxisId="left" y={activeUnitThreshold} label={{ value: "부대 임계값", fill: "#4FD1C5" }} stroke="#4FD1C5" strokeDasharray="4 4" />}
+                        <ReferenceLine x={nowTimestamp} stroke="#fbbf24" strokeWidth={2} label={{ value: '현재', position: 'insideTop', fill: '#fbbf24' }} ifOverflow="extendDomain" />
                     </LineChart>
                   </ResponsiveContainer>)}
             </div>
-            <div className="flex justify-between items-center mt-4 pt-4 border-t border-gray-700">
+            <div className="flex flex-col md:flex-row justify-between items-center mt-4 pt-4 border-t border-gray-700 gap-4">
                 <div className="flex items-center gap-4">
-                    <span className="text-sm font-medium text-gray-400">표시 데이터:</span>
-                    <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-300"><input type="checkbox" checked={visibleData.gnss} onChange={e => setVisibleData(v => ({...v, gnss: e.target.checked}))} className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-red-500 focus:ring-red-500" /> GNSS 오차</label>
-                    <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-300"><input type="checkbox" checked={visibleData.tec} onChange={e => setVisibleData(v => ({...v, tec: e.target.checked}))} className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-500" /> TEC</label>
+                    <span className="text-sm font-medium text-gray-400 shrink-0">표시 데이터:</span>
+                    <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-300"><input type="checkbox" checked={visibleData.gnss} onChange={e => setVisibleData(v => ({...v, gnss: e.target.checked}))} className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-red-500 focus:ring-red-500 rounded" /> GNSS 오차</label>
+                    <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-300"><input type="checkbox" checked={visibleData.tec} onChange={e => setVisibleData(v => ({...v, tec: e.target.checked}))} className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-500 rounded" /> TEC</label>
                 </div>
-                <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-gray-400">시간 범위:</span>
-                    {[12, 24, 48].map(h => <button key={h} onClick={() => setTimeRange(h)} className={`px-3 py-1 text-xs font-semibold rounded-md ${timeRange === h ? 'bg-cyan-600 text-white' : 'bg-gray-600 hover:bg-gray-500'}`}>{h}시간</button>)}
+                <div className="flex items-center gap-2 w-full md:w-auto">
+                    <input type="datetime-local" value={toLocalISOString(new Date(timeRange.start))} onChange={e => setTimeRange(r => ({...r, start: new Date(e.target.value).getTime()}))} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-full"/>
+                    <span className="text-gray-400">-</span>
+                    <input type="datetime-local" value={toLocalISOString(new Date(timeRange.end))} onChange={e => setTimeRange(r => ({...r, end: new Date(e.target.value).getTime()}))} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-full"/>
                 </div>
             </div>
         </div>
@@ -260,11 +271,15 @@ const StatCard = ({ title, value, icon, color }) => (
         </div>
     </div>
 );
+
 const AnalysisView = ({ logs, profile }) => {
     const analysisData = useMemo(() => {
         if (logs.length === 0) return null;
+        
         const totalLogs = logs.length;
         const avgScore = logs.reduce((acc, log) => acc + log.successScore, 0) / totalLogs;
+        
+        // Equipment Analysis
         const equipmentData = profile.equipment.map(eq => {
             const eqLogs = logs.filter(l => l.equipment === eq.name);
             if (eqLogs.length === 0) return { name: eq.name, success: 0, normal: 0, fail: 0, avgScore: 0, count: 0 };
@@ -275,16 +290,55 @@ const AnalysisView = ({ logs, profile }) => {
             return { name: eq.name, success, normal, fail, avgScore: parseFloat(avg.toFixed(1)), count: eqLogs.length };
         }).sort((a,b) => b.avgScore - a.avgScore);
         
+        // High Error Logs for Map
         const highErrorLogs = logs.filter(l => l.gnssErrorData && l.gnssErrorData[0]?.lat && Math.max(...l.gnssErrorData.map(d=>d.error_rate)) > profile.unitManualThreshold);
 
-        return { totalLogs, avgScore: avgScore.toFixed(1), equipmentData, highErrorLogs };
+        // Time of Day Analysis
+        const timeOfDayData = [
+            { name: '새벽 (00-06)', success: 0, fail: 0, count: 0, totalScore: 0 },
+            { name: '오전 (06-12)', success: 0, fail: 0, count: 0, totalScore: 0 },
+            { name: '오후 (12-18)', success: 0, fail: 0, count: 0, totalScore: 0 },
+            { name: '야간 (18-24)', success: 0, fail: 0, count: 0, totalScore: 0 },
+        ];
+        logs.forEach(log => {
+            const hour = new Date(log.startTime).getHours();
+            let period;
+            if (hour >= 0 && hour < 6) period = timeOfDayData[0];
+            else if (hour >= 6 && hour < 12) period = timeOfDayData[1];
+            else if (hour >= 12 && hour < 18) period = timeOfDayData[2];
+            else period = timeOfDayData[3];
+            
+            period.count++;
+            period.totalScore += log.successScore;
+            if (log.successScore >= 8) period.success++;
+            else period.fail++;
+        });
+        const finalTimeData = timeOfDayData.map(p => ({ ...p, avgScore: p.count > 0 ? (p.totalScore / p.count).toFixed(1) : 0 }));
+        
+        // Weekly Trend Analysis
+        const weeklyTrends = {};
+        logs.forEach(log => {
+            const date = new Date(log.startTime);
+            const weekStart = new Date(date.setDate(date.getDate() - date.getDay())).toISOString().slice(0, 10);
+            if (!weeklyTrends[weekStart]) {
+                weeklyTrends[weekStart] = { totalScore: 0, count: 0, name: weekStart };
+            }
+            weeklyTrends[weekStart].totalScore += log.successScore;
+            weeklyTrends[weekStart].count++;
+        });
+        const trendData = Object.values(weeklyTrends)
+            .map(w => ({ ...w, avgScore: parseFloat((w.totalScore / w.count).toFixed(1)) }))
+            .sort((a, b) => new Date(a.name) - new Date(b.name));
+
+
+        return { totalLogs, avgScore: avgScore.toFixed(1), equipmentData, highErrorLogs, timeOfDayData: finalTimeData, trendData };
     }, [logs, profile]);
 
     if (!analysisData) {
         return <div className="text-center text-gray-400">분석할 피드백 데이터가 없습니다.</div>;
     }
 
-    const { totalLogs, avgScore, equipmentData, highErrorLogs } = analysisData;
+    const { totalLogs, avgScore, equipmentData, highErrorLogs, timeOfDayData, trendData } = analysisData;
 
     return (
         <div className="space-y-6">
@@ -296,6 +350,33 @@ const AnalysisView = ({ logs, profile }) => {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                 <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
+                    <h2 className="text-lg font-semibold text-white mb-4">시간대별 작전 성공률</h2>
+                    <ResponsiveContainer width="100%" height={300}>
+                       <BarChart data={timeOfDayData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" />
+                            <XAxis dataKey="name" stroke="#A0AEC0" tick={{fontSize: 12}} />
+                            <YAxis stroke="#A0AEC0" />
+                            <Tooltip contentStyle={{ backgroundColor: '#1A202C' }} />
+                            <Legend />
+                            <Bar dataKey="success" stackId="a" fill="#4ade80" name="성공" />
+                            <Bar dataKey="fail" stackId="a" fill="#f87171" name="실패/보통" />
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+                 <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
+                    <h2 className="text-lg font-semibold text-white mb-4">주간 성공률 추이</h2>
+                    <ResponsiveContainer width="100%" height={300}>
+                        <LineChart data={trendData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" />
+                            <XAxis dataKey="name" stroke="#A0AEC0" tick={{fontSize: 10}} />
+                            <YAxis stroke="#A0AEC0" domain={[0, 10]}/>
+                            <Tooltip contentStyle={{ backgroundColor: '#1A202C' }} />
+                            <Legend />
+                            <Line type="monotone" dataKey="avgScore" name="주간 평균 점수" stroke="#8884d8" />
+                        </LineChart>
+                    </ResponsiveContainer>
+                </div>
                 <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
                     <h2 className="text-lg font-semibold text-white mb-4">장비별 작전 성공률</h2>
                     <ResponsiveContainer width="100%" height={300}>
@@ -360,4 +441,6 @@ const DeveloperTestView = ({ setLogs, profile, initialProfile, goBack }) => {
     const resetAppState = () => { if (window.confirm("앱의 모든 로컬 데이터(프로필, 피드백 로그)를 삭제하고 초기 상태로 되돌리시겠습니까?")) { localStorage.clear(); alert("앱 상태가 초기화되었습니다. 페이지를 새로고침합니다."); window.location.reload(); }};
     return (<div className="bg-gray-800 p-6 md:p-8 rounded-xl border border-gray-700 max-w-2xl mx-auto"><div className="flex items-center mb-6"><button onClick={goBack} className="mr-4 p-2 rounded-full hover:bg-gray-700"><ArrowLeft className="w-6 h-6" /></button><h2 className="text-xl md:text-2xl font-bold text-white">개발자 테스트 도구</h2></div><div className="space-y-6"><div><h3 className="text-lg font-semibold text-white mb-3">피드백 데이터 관리</h3><div className="flex space-x-4"><button onClick={generateMockLogs} className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><TestTube2 size={20} /><span>테스트 데이터 생성</span></button><button onClick={clearLogs} className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><Eraser size={20} /><span>모든 데이터 삭제</span></button></div></div><div><h3 className="text-lg font-semibold text-white mb-3 text-red-400">위험 영역</h3><div className="flex space-x-4"><button onClick={resetAppState} className="w-full bg-red-800 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><RefreshCw size={20} /><span>앱 상태 전체 초기화</span></button></div></div></div></div>);
 };
+
+
 
