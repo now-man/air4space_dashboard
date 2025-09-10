@@ -55,7 +55,7 @@ export default function App() {
             
             const formattedData = parsedData.map(d => {
                 const timestamp = new Date(d.time).getTime();
-                if (isNaN(timestamp)) return null; // Invalid date format
+                if (isNaN(timestamp)) return null;
                 return {
                     timestamp,
                     timeLabel: new Date(timestamp).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }),
@@ -145,7 +145,8 @@ const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold })
             <div style={{width: '100%', height: 250}}>
                 {forecastStatus.isLoading ? (<div className="flex items-center justify-center h-full text-gray-400">데이터 로딩 중...</div>)
                  : forecastStatus.error ? (<div className="flex items-center justify-center h-full text-red-400">{forecastStatus.error}</div>)
-                 : displayData.length === 0 ? (<div className="flex items-center justify-center h-full text-gray-400">선택된 시간 범위에 데이터가 없습니다.</div>)
+                 // BUG FIX: Change condition from > 0 to > 1 to prevent crash
+                 : displayData.length < 2 ? (<div className="flex items-center justify-center h-full text-gray-400">선택된 시간 범위에 데이터가 부족하여 그래프를 표시할 수 없습니다.</div>)
                  : (<ResponsiveContainer width="100%" height="100%">
                      <LineChart data={displayData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" />
@@ -157,8 +158,7 @@ const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold })
                         {visibleData.gnss && <Line yAxisId="left" dataKey="predicted_error" name="GNSS 오차" stroke="#F56565" dot={false} />}
                         {visibleData.tec && <Line yAxisId="right" dataKey="tec" name="TEC" stroke="#4299E1" dot={false} />}
                         {visibleData.gnss && <ReferenceLine yAxisId="left" y={activeUnitThreshold} label={{ value: "부대 임계값", fill: "#4FD1C5" }} stroke="#4FD1C5" strokeDasharray="4 4" />}
-                        {/* BUG FIX: Only render ReferenceLine when displayData is not empty */}
-                        {displayData.length > 0 && <ReferenceLine x={nowTimestamp} stroke="#fbbf24" strokeWidth={2} label={{ value: '현재', position: 'insideTop', fill: '#fbbf24' }} ifOverflow="extendDomain" />}
+                        <ReferenceLine x={nowTimestamp} stroke="#fbbf24" strokeWidth={2} label={{ value: '현재', position: 'insideTop', fill: '#fbbf24' }} ifOverflow="extendDomain" />
                     </LineChart>
                   </ResponsiveContainer>)}
             </div>
