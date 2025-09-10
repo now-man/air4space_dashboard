@@ -1,0 +1,8 @@
+# Netlify Redirects 설정
+# /api/csv 로 오는 요청을 Google Sheet CSV 주소로 보냅니다.
+
+[[redirects]]
+  from = "/api/csv"
+  to = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ-6gU6HgBZJowUJ46zbn55B5BjkO6Gh4bCaCMakplGl9hbmpYskYXu4NvFaJ_FhgDzIn1X4OpNwQFX/pub?gid=0&single=true&output=csv"
+  status = 200
+  force = true

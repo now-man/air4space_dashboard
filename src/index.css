@@ -1,0 +1,9 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+@import "leaflet/dist/leaflet.css";
+
+/* MODIFIED (Problem 1): Set body background color */
+body {
+    background-color: #111827; /* This is gray-900 */
+}
