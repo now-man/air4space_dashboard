@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+// MODIFIED: 빠져있던 ReferenceArea를 import 목록에 추가했습니다.
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceArea, BarChart, Bar, Cell, PieChart, Pie } from 'recharts';
 import { DayPicker } from 'react-day-picker';
 import { ko } from 'date-fns/locale';
@@ -6,8 +7,6 @@ import { Zap, Settings, ShieldAlert, BotMessageSquare, Plus, Trash2, Save, Arrow
 import { MapContainer, TileLayer, CircleMarker, Tooltip as LeafletTooltip, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'react-day-picker/dist/style.css';
-
-
 
 // --- Helper Functions ---
 const getErrorColor = (error, threshold = 10.0) => { if (error > threshold) return '#f87171'; if (error > threshold * 0.7) return '#facc15'; return '#4ade80'; };
@@ -125,7 +124,6 @@ const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold })
         const now = new Date().getTime();
         const rangeMs = timeRange * 60 * 60 * 1000;
         
-        // Find the data point closest to the current time to center the view
         let closestPoint = allForecastData.reduce((prev, curr) => 
             Math.abs(curr.timestamp - now) < Math.abs(prev.timestamp - now) ? curr : prev
         );
@@ -156,7 +154,8 @@ const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold })
                         {visibleData.gnss && <Line yAxisId="left" dataKey="predicted_error" name="GNSS 오차" stroke="#F56565" dot={false} />}
                         {visibleData.tec && <Line yAxisId="right" dataKey="tec" name="TEC" stroke="#4299E1" dot={false} />}
                         <ReferenceLine yAxisId="left" y={activeUnitThreshold} label={{ value: "부대 임계값", fill: "#4FD1C5" }} stroke="#4FD1C5" strokeDasharray="4 4" />
-                        <ReferenceLine x={nowTimestamp} stroke="#fbbf24" strokeWidth={2} label={{ value: '현재', position: 'insideTop', fill: '#fbbf24' }} />
+                        {/* MODIFIED: Conditionally render the ReferenceLine for "now" */}
+                        {displayData && displayData.length > 0 && <ReferenceLine x={nowTimestamp} stroke="#fbbf24" strokeWidth={2} label={{ value: '현재', position: 'insideTop', fill: '#fbbf24' }} />}
                     </LineChart>
                   </ResponsiveContainer>)}
             </div>
