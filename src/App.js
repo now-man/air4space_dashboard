@@ -120,20 +120,12 @@ const Header = ({setActiveView, activeView}) => {
 // --- Dashboard Sub-components ---
 const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold }) => {
     const [visibleData, setVisibleData] = useState({ gnss: true, tec: true });
-
-    // Set default time range on component mount
     const [timeRange, setTimeRange] = useState(() => {
-        if (allForecastData && allForecastData.length > 0) {
-            const first = allForecastData[0].timestamp;
-            const last = allForecastData[allForecastData.length - 1].timestamp;
-            return { start: first, end: last };
-        }
         const now = new Date();
         const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
         return { start: yesterday.getTime(), end: now.getTime() };
     });
     
-    // Update default range when data arrives
     useEffect(() => {
         if (allForecastData && allForecastData.length > 0) {
             setTimeRange({ start: allForecastData[0].timestamp, end: allForecastData[allForecastData.length - 1].timestamp });
@@ -165,7 +157,8 @@ const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold })
                         {visibleData.gnss && <Line yAxisId="left" dataKey="predicted_error" name="GNSS 오차" stroke="#F56565" dot={false} />}
                         {visibleData.tec && <Line yAxisId="right" dataKey="tec" name="TEC" stroke="#4299E1" dot={false} />}
                         {visibleData.gnss && <ReferenceLine yAxisId="left" y={activeUnitThreshold} label={{ value: "부대 임계값", fill: "#4FD1C5" }} stroke="#4FD1C5" strokeDasharray="4 4" />}
-                        <ReferenceLine x={nowTimestamp} stroke="#fbbf24" strokeWidth={2} label={{ value: '현재', position: 'insideTop', fill: '#fbbf24' }} ifOverflow="extendDomain" />
+                        {/* BUG FIX: Only render ReferenceLine when displayData is not empty */}
+                        {displayData.length > 0 && <ReferenceLine x={nowTimestamp} stroke="#fbbf24" strokeWidth={2} label={{ value: '현재', position: 'insideTop', fill: '#fbbf24' }} ifOverflow="extendDomain" />}
                     </LineChart>
                   </ResponsiveContainer>)}
             </div>
@@ -441,6 +434,4 @@ const DeveloperTestView = ({ setLogs, profile, initialProfile, goBack }) => {
     const resetAppState = () => { if (window.confirm("앱의 모든 로컬 데이터(프로필, 피드백 로그)를 삭제하고 초기 상태로 되돌리시겠습니까?")) { localStorage.clear(); alert("앱 상태가 초기화되었습니다. 페이지를 새로고침합니다."); window.location.reload(); }};
     return (<div className="bg-gray-800 p-6 md:p-8 rounded-xl border border-gray-700 max-w-2xl mx-auto"><div className="flex items-center mb-6"><button onClick={goBack} className="mr-4 p-2 rounded-full hover:bg-gray-700"><ArrowLeft className="w-6 h-6" /></button><h2 className="text-xl md:text-2xl font-bold text-white">개발자 테스트 도구</h2></div><div className="space-y-6"><div><h3 className="text-lg font-semibold text-white mb-3">피드백 데이터 관리</h3><div className="flex space-x-4"><button onClick={generateMockLogs} className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><TestTube2 size={20} /><span>테스트 데이터 생성</span></button><button onClick={clearLogs} className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><Eraser size={20} /><span>모든 데이터 삭제</span></button></div></div><div><h3 className="text-lg font-semibold text-white mb-3 text-red-400">위험 영역</h3><div className="flex space-x-4"><button onClick={resetAppState} className="w-full bg-red-800 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><RefreshCw size={20} /><span>앱 상태 전체 초기화</span></button></div></div></div></div>);
 };
-
-
 
