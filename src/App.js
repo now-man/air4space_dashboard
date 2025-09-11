@@ -336,14 +336,15 @@ const CustomScatterTooltip = ({ active, payload }) => {
 const StatCard = ({ title, value, icon, color }) => (<div className="bg-gray-800 p-4 rounded-xl flex items-center gap-4 border border-gray-700"><div className={`p-3 rounded-lg bg-${color}-500/20 text-${color}-400`}>{icon}</div><div><p className="text-gray-400 text-sm">{title}</p><p className="text-2xl font-bold text-white">{value}</p></div></div>);
 
 const ShapeIcon = ({ shape, color = "white" }) => {
+    const props = { size: 14, className: `text-${color}` };
     switch(shape) {
-        case 'circle': return <Circle size={14} className="text-white"/>;
-        case 'triangle': return <Triangle size={14} className="text-white"/>;
-        case 'square': return <Square size={14} className="text-white"/>;
-        case 'diamond': return <Square size={14} className="text-white rotate-45"/>;
-        default: return <Plus size={14} className="text-white"/>
+        case 'circle': return <Circle {...props} fill={color} />;
+        case 'triangle': return <Triangle {...props} fill={color} />;
+        case 'square': return <Square {...props} fill={color} />;
+        case 'diamond': return <Square {...props} fill={color} className={`${props.className} rotate-45`}/>;
+        default: return <Plus {...props} />;
     }
-}
+};
 
 const AnalysisView = ({ logs, profile }) => {
     const [selectedEquipment, setSelectedEquipment] = useState(profile.equipment[0]?.name || '');
@@ -387,33 +388,22 @@ const AnalysisView = ({ logs, profile }) => {
         let pcaData = [];
         const logsForPca = logs.filter(l => l.gnssErrorData);
         if (logsForPca.length > 2) {
-            const generateClusterPoint = (centers, spread) => {
-                const center = centers[Math.floor(Math.random() * centers.length)];
-                const angle = Math.random() * 2 * Math.PI;
-                const radius = Math.sqrt(Math.random()) * spread;
-                return { x: center.x + radius * Math.cos(angle), y: center.y + radius * Math.sin(angle) };
-            };
-            const successCenters = [{x: -2, y: -1.5}, {x: -1.5, y: -2}];
-            const failCenters = [{x: 2, y: 1.5}, {x: 1.5, y: 2}];
-            const normalCenters = [{x: 0, y: 0}, {x: -0.5, y: 0.5}, {x: 0.5, y: -0.5}];
+            const allErrors = logsForPca.map(l => Math.max(...l.gnssErrorData.map(d => d.error_rate)));
+            const avgMaxError = allErrors.reduce((a, b) => a + b, 0) / allErrors.length;
+            const equipmentOffsets = profile.equipment.reduce((acc, eq, i) => {
+                acc[eq.name] = (i - (profile.equipment.length - 1) / 2) * 0.8;
+                return acc;
+            }, {});
 
             pcaData = logsForPca.map(log => {
-                let scoreCategory;
-                if (log.successScore >= 8) scoreCategory = 'success';
-                else if (log.successScore >= 4) scoreCategory = 'normal';
-                else scoreCategory = 'fail';
-
-                if (Math.random() < 0.1) { 
-                    const categories = ['success', 'normal', 'fail'];
-                    scoreCategory = categories[Math.floor(Math.random() * categories.length)];
-                }
+                const maxError = Math.max(...log.gnssErrorData.map(d => d.error_rate));
+                const base_pc1 = (maxError - avgMaxError) * 0.4;
+                const base_pc2 = equipmentOffsets[log.equipment] || 0;
                 
-                let point;
-                if (scoreCategory === 'success') { point = generateClusterPoint(successCenters, 1.5);
-                } else if (scoreCategory === 'fail') { point = generateClusterPoint(failCenters, 1.5);
-                } else { point = generateClusterPoint(normalCenters, 2); }
+                const noise_x = (Math.random() - 0.5) * 2;
+                const noise_y = (Math.random() - 0.5) * 2;
                 
-                return { pc1: point.x, pc2: point.y, successScore: log.successScore, equipment: log.equipment, maxError: Math.max(...log.gnssErrorData.map(d => d.error_rate)), startTime: log.startTime, endTime: log.endTime };
+                return { pc1: base_pc1 + noise_x, pc2: base_pc2 + noise_y, successScore: log.successScore, equipment: log.equipment, maxError: maxError, startTime: log.startTime, endTime: log.endTime };
             });
         }
         
@@ -425,10 +415,7 @@ const AnalysisView = ({ logs, profile }) => {
 
         return { totalLogs, avgScore: avgScore.toFixed(1), highErrorLogs, timeOfDayData, trendData, equipmentData, thresholdAnalysis, pcaDataByEquipment };
     }, [logs, profile, selectedEquipment]);
-
-    if (!analysisData) return <div className="text-center text-gray-400 p-8">분석할 피드백 데이터가 없습니다.</div>;
     
-    const { totalLogs, avgScore, highErrorLogs, timeOfDayData, trendData, equipmentData, thresholdAnalysis, pcaDataByEquipment } = analysisData;
     const shapeMap = useMemo(() => {
         const shapes = ['circle', 'triangle', 'square', 'diamond', 'cross', 'star', 'wye'];
         return profile.equipment.reduce((acc, eq, index) => {
@@ -436,6 +423,10 @@ const AnalysisView = ({ logs, profile }) => {
             return acc;
         }, {});
     }, [profile.equipment]);
+
+    if (!analysisData) return <div className="text-center text-gray-400 p-8">분석할 피드백 데이터가 없습니다.</div>;
+    
+    const { totalLogs, avgScore, highErrorLogs, timeOfDayData, trendData, equipmentData, thresholdAnalysis, pcaDataByEquipment } = analysisData;
     const getColorByScore = (score) => { if (score >= 8) return '#4ade80'; if (score >= 4) return '#facc15'; return '#f87171'; };
 
     return (
@@ -471,13 +462,13 @@ const AnalysisView = ({ logs, profile }) => {
 
                 <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
                     <h2 className="text-lg font-semibold text-white mb-4">가상 PCA 작전 요인 분석</h2>
-                     <p className="text-xs text-gray-400 mb-4 -mt-2">작전 성공도에 따라 군집화된 가상 데이터를 표시합니다.</p>
+                     <p className="text-xs text-gray-400 mb-4 -mt-2">작전 성공도와 장비 종류에 따라 군집화된 가상 데이터를 표시합니다.</p>
                     <ResponsiveContainer width="100%" height={300}>
                         {Object.keys(pcaDataByEquipment).length > 0 ? (
                             <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 0 }}>
                                 <CartesianGrid stroke="#4A5568" strokeDasharray="3 3"/>
-                                <XAxis type="number" dataKey="pc1" name="가상 요인 1" stroke="#A0AEC0" tickFormatter={(v) => v.toFixed(1)} />
-                                <YAxis type="number" dataKey="pc2" name="가상 요인 2" stroke="#A0AEC0" tickFormatter={(v) => v.toFixed(1)} />
+                                <XAxis type="number" dataKey="pc1" name="PC1 (GNSS 오차 기반, 44.3%)" stroke="#A0AEC0" tickFormatter={(v) => v.toFixed(1)} />
+                                <YAxis type="number" dataKey="pc2" name="PC2 (장비 특성 기반, 19.2%)" stroke="#A0AEC0" tickFormatter={(v) => v.toFixed(1)} />
                                 <Tooltip content={<CustomScatterTooltip />} cursor={{ strokeDasharray: '3 3' }} />
                                 {Object.entries(pcaDataByEquipment).map(([eqName, eqData]) => (
                                     <Scatter key={eqName} name={eqName} data={eqData} shape={shapeMap[eqName] || 'cross'}>
@@ -594,7 +585,7 @@ const SettingsView = ({ profiles, setProfiles, activeProfile, setActiveProfileId
         </div><div className="mt-8 flex justify-end"><button onClick={handleSave} className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-6 rounded-lg flex items-center space-x-2"><Save className="w-5 h-5" /><span>저장</span></button></div></div>);
 };
 const DeveloperTestView = ({ setLogs, profile, goBack }) => {
-    const generateMockLogs = () => { if (!window.confirm("기존 피드백을 삭제하고, 최근 100일간의 시연용 테스트 데이터를 대량 생성합니까?")) return; const newLogs = []; const today = new Date(); for (let i = 0; i < 100; i++) { const date = new Date(today); date.setDate(today.getDate() - i); const logCount = Math.floor(Math.random() * 5) + 5; for (let j = 0; j < logCount; j++) { const eq = profile.equipment[Math.floor(Math.random() * profile.equipment.length)]; const isBadWeather = Math.random() < 0.2; const baseError = isBadWeather ? (eq.manualThreshold * 1.1 + Math.random() * 5) : (2 + Math.random() * (eq.manualThreshold * 0.5)); let successScore; const errorRatio = baseError / eq.manualThreshold; if (errorRatio > 1.0) { successScore = Math.floor(1 + Math.random() * 3); } else if (errorRatio > 0.7) { successScore = Math.floor(4 + Math.random() * 4); } else { successScore = Math.floor(8 + Math.random() * 3); } const startTime = new Date(date); startTime.setHours(Math.floor(Math.random() * 23), Math.floor(Math.random() * 60)); const endTime = new Date(startTime.getTime() + (30 + Math.floor(Math.random() * 90)) * 60000); const data = []; let curTime = new Date(startTime); const p0 = [profile.location.coords.lat+Math.random()*0.5, profile.location.coords.lon+Math.random()*0.5]; const p1 = [profile.location.coords.lat+Math.random()*0.5, profile.location.coords.lon+Math.random()*0.5]; const p2 = [profile.location.coords.lat+Math.random()*0.5, profile.location.coords.lon+Math.random()*0.5]; let step = 0; while (curTime < endTime) { const err = Math.max(1.0, baseError + (Math.random() - 0.5) * 4); const entry = { date: curTime.toISOString(), error_rate: parseFloat(err.toFixed(2))}; if (eq.usesGeoData) { const progress = step / ((endTime.getTime() - startTime.getTime()) / 60000 || 1); const pos = getPointOnBezierCurve(progress, p0, p1, p2); entry.lat = pos[0]; entry.lon = pos[1]; } data.push(entry); curTime.setMinutes(curTime.getMinutes() + 1); step++; } newLogs.push({ id: Date.now() + i * 100 + j, startTime: startTime.toISOString(), endTime: endTime.toISOString(), equipment: eq.name, successScore, gnssErrorData: data }); } } setLogs(newLogs.sort((a, b) => new Date(b.startTime) - new Date(a.startTime))); alert(`${newLogs.length}개의 테스트 피드백이 생성되었습니다.`); };
+    const generateMockLogs = () => { if (!window.confirm("기존 피드백을 삭제하고, 최근 100일간의 시연용 테스트 데이터를 대량 생성합니까?")) return; const newLogs = []; const today = new Date(); for (let i = 0; i < 100; i++) { const date = new Date(today); date.setDate(today.getDate() - i); const logCount = Math.floor(Math.random() * 5) + 5; for (let j = 0; j < logCount; j++) { const eq = profile.equipment[Math.floor(Math.random() * profile.equipment.length)]; const isBadWeather = Math.random() < 0.15; const baseError = isBadWeather ? (eq.manualThreshold * 1.1 + Math.random() * 5) : (2 + Math.random() * (eq.manualThreshold * 0.4)); let successScore; const errorRatio = baseError / eq.manualThreshold; if (errorRatio > 1.0) { successScore = Math.floor(1 + Math.random() * 3); } else if (errorRatio > 0.7) { successScore = Math.floor(4 + Math.random() * 4); } else { successScore = Math.floor(8 + Math.random() * 3); } const startTime = new Date(date); startTime.setHours(Math.floor(Math.random() * 23), Math.floor(Math.random() * 60)); const endTime = new Date(startTime.getTime() + (30 + Math.floor(Math.random() * 90)) * 60000); const data = []; let curTime = new Date(startTime); const p0 = [profile.location.coords.lat+Math.random()*0.5, profile.location.coords.lon+Math.random()*0.5]; const p1 = [profile.location.coords.lat+Math.random()*0.5, profile.location.coords.lon+Math.random()*0.5]; const p2 = [profile.location.coords.lat+Math.random()*0.5, profile.location.coords.lon+Math.random()*0.5]; let step = 0; while (curTime < endTime) { const err = Math.max(1.0, baseError + (Math.random() - 0.5) * 4); const entry = { date: curTime.toISOString(), error_rate: parseFloat(err.toFixed(2))}; if (eq.usesGeoData) { const progress = step / ((endTime.getTime() - startTime.getTime()) / 60000 || 1); const pos = getPointOnBezierCurve(progress, p0, p1, p2); entry.lat = pos[0]; entry.lon = pos[1]; } data.push(entry); curTime.setMinutes(curTime.getMinutes() + 1); step++; } newLogs.push({ id: Date.now() + i * 100 + j, startTime: startTime.toISOString(), endTime: endTime.toISOString(), equipment: eq.name, successScore, gnssErrorData: data }); } } setLogs(newLogs.sort((a, b) => new Date(b.startTime) - new Date(a.startTime))); alert(`${newLogs.length}개의 테스트 피드백이 생성되었습니다.`); };
     const clearLogs = () => { if (window.confirm("모든 피드백 데이터를 삭제하시겠습니까?")) { setLogs([]); alert("모든 피드백이 삭제되었습니다."); }};
     const resetAppState = () => { if (window.confirm("앱의 모든 로컬 데이터(프로필, 피드백 로그)를 삭제하고 초기 상태로 되돌리시겠습니까?")) { localStorage.clear(); alert("앱 상태가 초기화되었습니다. 페이지를 새로고침합니다."); window.location.reload(); }};
     return (<div className="bg-gray-800 p-6 md:p-8 rounded-xl border border-gray-700 max-w-2xl mx-auto"><div className="flex items-center mb-6"><button onClick={goBack} className="mr-4 p-2 rounded-full hover:bg-gray-700"><ArrowLeft className="w-6 h-6" /></button><h2 className="text-xl md:text-2xl font-bold text-white">개발자 테스트 도구</h2></div><div className="space-y-6"><div><h3 className="text-lg font-semibold text-white mb-3">피드백 데이터 관리</h3><div className="flex space-x-4"><button onClick={generateMockLogs} className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><TestTube2 size={20} /><span>테스트 데이터 생성</span></button><button onClick={clearLogs} className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><Eraser size={20} /><span>모든 데이터 삭제</span></button></div></div><div><h3 className="text-lg font-semibold text-white mb-3 text-red-400">위험 영역</h3><div className="flex space-x-4"><button onClick={resetAppState} className="w-full bg-red-800 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><RefreshCw size={20} /><span>앱 상태 전체 초기화</span></button></div></div></div></div>);
