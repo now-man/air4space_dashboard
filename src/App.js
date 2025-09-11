@@ -10,7 +10,7 @@ import 'react-day-picker/dist/style.css';
 
 // --- Helper Functions ---
 const getErrorColor = (error, threshold = 10.0) => { if (error > threshold) return '#f87171'; if (error > threshold * 0.7) return '#facc15'; return '#4ade80'; };
-const getSuccessScoreInfo = (score) => { if (score >= 8) return { label: "성공", color: "text-green-400", dotClass: "bg-green-500" }; if (score >= 4) return { label: "보통", color: "text-yellow-400", dotClass: "bg-yellow-500" }; return { label: "실패", color: "text-red-400", dotClass: "bg-red-500" }; };
+const getSuccessScoreInfo = (score) => { if (score >= 8) return { label: "성공", color: "text-green-400", dotClass: "bg-green-500" }; if (score >= 4 && score < 8) return { label: "보통", color: "text-yellow-400", dotClass: "bg-yellow-500" }; return { label: "실패", color: "text-red-400", dotClass: "bg-red-500" }; };
 const formatDate = (dateString, format = 'full') => { if (!dateString) return 'N/A'; const date = new Date(dateString); const options = { full: { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }, time: { hour: '2-digit', minute: '2-digit', hour12: false }, date: { year: 'numeric', month: 'long', day: 'numeric' }}; return date.toLocaleString('ko-KR', options[format]); };
 const toLocalISOString = (date) => new Date(date.getTime() - (date.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
 const getPointOnBezierCurve = (t, p0, p1, p2) => { const [x0, y0] = p0; const [x1, y1] = p1; const [x2, y2] = p2; const u = 1 - t; const tt = t * t; const uu = u * u; const x = uu * x0 + 2 * u * t * x1 + tt * x2; const y = uu * y0 + 2 * u * t * y1 + tt * y2; return [x, y]; };
@@ -309,8 +309,14 @@ const AnalysisView = ({ logs, profile, allForecastData }) => {
         const avgScore = logs.reduce((acc, log) => acc + log.successScore, 0) / totalLogs;
         const highErrorLogs = logs.filter(l => l.gnssErrorData && l.gnssErrorData.some(d => d.lat) && Math.max(...l.gnssErrorData.map(d => d.error_rate)) > profile.unitManualThreshold);
         
-        const timeOfDayData = [{ n: '새벽 (00-06)', s: 0, f: 0 }, { n: '오전 (06-12)', s: 0, f: 0 }, { n: '오후 (12-18)', s: 0, f: 0 }, { n: '야간 (18-24)', s: 0, f: 0 }];
-        logs.forEach(log => { const h = new Date(log.startTime).getHours(); const p = timeOfDayData[Math.floor(h / 6)]; log.successScore >= 8 ? p.s++ : p.f++; });
+        const timeOfDayData = [{ n: '새벽 (00-06)', s: 0, n: 0, f: 0 }, { n: '오전 (06-12)', s: 0, n: 0, f: 0 }, { n: '오후 (12-18)', s: 0, n: 0, f: 0 }, { n: '야간 (18-24)', s: 0, n: 0, f: 0 }];
+        logs.forEach(log => { 
+            const h = new Date(log.startTime).getHours(); 
+            const p = timeOfDayData[Math.floor(h / 6)]; 
+            if(log.successScore >= 8) p.s++;
+            else if(log.successScore >= 4) p.n++;
+            else p.f++;
+        });
         
         const weeklyTrends = {};
         logs.forEach(log => { const d = new Date(log.startTime); const weekStart = new Date(d.setDate(d.getDate() - (d.getDay() || 7) + 1)).toISOString().slice(0, 10); if (!weeklyTrends[weekStart]) { weeklyTrends[weekStart] = { totalScore: 0, count: 0, name: weekStart }; } weeklyTrends[weekStart].totalScore += log.successScore; weeklyTrends[weekStart].count++; });
@@ -333,16 +339,31 @@ const AnalysisView = ({ logs, profile, allForecastData }) => {
         }
         
         let pcaData = [];
-        if (allForecastData.length > 0 && logs.length > 5) {
+        if (allForecastData.length > 0 && logs.length > 0) {
             const features = logs.map(log => {
-                const start = new Date(log.startTime).getTime(); const end = new Date(log.endTime).getTime();
-                const relevantForecast = allForecastData.filter(d => d.timestamp >= start && d.timestamp <= end);
-                if (!relevantForecast.length || !log.gnssErrorData) return null;
-                const avg_tec = relevantForecast.reduce((sum, d) => sum + d.tec, 0) / relevantForecast.length;
-                const avg_predicted_error = relevantForecast.reduce((sum, d) => sum + d.predicted_error, 0) / relevantForecast.length;
+                const start = new Date(log.startTime).getTime();
+                const end = new Date(log.endTime).getTime();
+                
+                let relevantForecast = allForecastData.filter(d => d.timestamp >= start && d.timestamp <= end);
+                let weatherDataPoint = null;
+
+                if (relevantForecast.length > 0) {
+                    weatherDataPoint = {
+                        tec: relevantForecast.reduce((sum, d) => sum + d.tec, 0) / relevantForecast.length,
+                        predicted_error: relevantForecast.reduce((sum, d) => sum + d.predicted_error, 0) / relevantForecast.length,
+                    };
+                } else {
+                    weatherDataPoint = allForecastData[Math.floor(Math.random() * allForecastData.length)];
+                }
+
+                if (!weatherDataPoint || !log.gnssErrorData) return null;
+                
                 const max_actual_error = Math.max(...log.gnssErrorData.map(d => d.error_rate));
                 const hour = new Date(log.startTime).getHours();
-                return { vector: [avg_tec, avg_predicted_error, max_actual_error, hour], payload: { successScore: log.successScore, equipment: log.equipment, avg_tec_during_mission: avg_tec, maxError: max_actual_error } };
+                return { 
+                    vector: [weatherDataPoint.tec, weatherDataPoint.predicted_error, max_actual_error, hour], 
+                    payload: { successScore: log.successScore, equipment: log.equipment, avg_tec_during_mission: weatherDataPoint.tec, maxError: max_actual_error } 
+                };
             }).filter(Boolean);
 
             if (features.length > 2) {
@@ -386,10 +407,11 @@ const AnalysisView = ({ logs, profile, allForecastData }) => {
                             <YAxis type="number" dataKey="maxError" name="최대 오차" unit="m" stroke="#A0AEC0" />
                             <Tooltip content={<CustomScatterTooltip />} cursor={{ strokeDasharray: '3 3' }} />
                             <Legend />
-                            <Scatter name="성공 작전" data={thresholdAnalysis.data.filter(d => d.successScore >= 8)} fill="#4ade80" />
-                            <Scatter name="보통/실패 작전" data={thresholdAnalysis.data.filter(d => d.successScore < 8)} fill="#f87171" />
+                            <Scatter name="성공" data={thresholdAnalysis.data.filter(d => d.successScore >= 8)} fill="#4ade80" />
+                            <Scatter name="보통" data={thresholdAnalysis.data.filter(d => d.successScore >= 4 && d.successScore < 8)} fill="#facc15" />
+                            <Scatter name="실패" data={thresholdAnalysis.data.filter(d => d.successScore < 4)} fill="#f87171" />
                             {thresholdAnalysis.autoThreshold != null && (
-                                <ReferenceLine y={thresholdAnalysis.autoThreshold} stroke="#facc15" strokeDasharray="4 4" label={{ value: `자동 임계값 (${thresholdAnalysis.autoThreshold.toFixed(1)}m)`, position: 'insideTopLeft', fill: '#facc15' }} />
+                                <ReferenceLine y={thresholdAnalysis.autoThreshold} stroke="#60a5fa" strokeDasharray="4 4" label={{ value: `자동 임계값 (${thresholdAnalysis.autoThreshold.toFixed(1)}m)`, position: 'insideTopLeft', fill: '#60a5fa' }} />
                             )}
                         </ScatterChart>
                     </ResponsiveContainer>
@@ -405,15 +427,17 @@ const AnalysisView = ({ logs, profile, allForecastData }) => {
                                 <XAxis type="number" dataKey="pc1" name="주성분 1" stroke="#A0AEC0" tickFormatter={(v) => v.toFixed(1)} />
                                 <YAxis type="number" dataKey="pc2" name="주성분 2" stroke="#A0AEC0" tickFormatter={(v) => v.toFixed(1)} />
                                 <Tooltip content={<CustomScatterTooltip />} cursor={{ strokeDasharray: '3 3' }} />
-                                <Scatter name="성공 작전" data={pcaData.filter(d => d.successScore >= 8)} fill="#4ade80" shape="circle" />
-                                <Scatter name="보통/실패 작전" data={pcaData.filter(d => d.successScore < 8)} fill="#f87171" shape="cross" />
+                                <Legend />
+                                <Scatter name="성공" data={pcaData.filter(d => d.successScore >= 8)} fill="#4ade80" shape="circle" />
+                                <Scatter name="보통" data={pcaData.filter(d => d.successScore >= 4 && d.successScore < 8)} fill="#facc15" shape="triangle" />
+                                <Scatter name="실패" data={pcaData.filter(d => d.successScore < 4)} fill="#f87171" shape="cross" />
                             </ScatterChart>
-                        ) : <div className="flex items-center justify-center h-full text-gray-500">PCA 분석을 위한 데이터가 부족합니다. (최소 5회 이상)</div>}
+                        ) : <div className="flex items-center justify-center h-full text-gray-500">PCA 분석을 위한 데이터가 부족합니다. (로그 3개 이상 필요)</div>}
                     </ResponsiveContainer>
                 </div>
                  <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
                     <h2 className="text-lg font-semibold text-white mb-4">시간대별 작전 성공률</h2>
-                    <ResponsiveContainer width="100%" height={300}><BarChart data={timeOfDayData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" stroke="#4A5568" /><XAxis dataKey="n" stroke="#A0AEC0" tick={{fontSize: 12}} /><YAxis stroke="#A0AEC0" /><Tooltip contentStyle={{ backgroundColor: '#1A202C' }} /><Legend /><Bar dataKey="s" stackId="a" fill="#4ade80" name="성공" /><Bar dataKey="f" stackId="a" fill="#f87171" name="실패/보통" /></BarChart></ResponsiveContainer>
+                    <ResponsiveContainer width="100%" height={300}><BarChart data={timeOfDayData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" stroke="#4A5568" /><XAxis dataKey="n" stroke="#A0AEC0" tick={{fontSize: 12}} /><YAxis stroke="#A0AEC0" /><Tooltip contentStyle={{ backgroundColor: '#1A202C' }} /><Legend /><Bar dataKey="s" stackId="a" fill="#4ade80" name="성공" /><Bar dataKey="n" stackId="a" fill="#facc15" name="보통" /><Bar dataKey="f" stackId="a" fill="#f87171" name="실패" /></BarChart></ResponsiveContainer>
                 </div>
                  <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
                     <h2 className="text-lg font-semibold text-white mb-4">주간 성공률 추이</h2>
@@ -508,7 +532,7 @@ const SettingsView = ({ profiles, setProfiles, activeProfile, setActiveProfileId
         </div><div className="mt-8 flex justify-end"><button onClick={handleSave} className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-6 rounded-lg flex items-center space-x-2"><Save className="w-5 h-5" /><span>저장</span></button></div></div>);
 };
 const DeveloperTestView = ({ setLogs, profile, goBack }) => {
-    const generateMockLogs = () => { if (!window.confirm("기존 피드백을 삭제하고, 최근 3일간의 테스트 데이터를 대량 생성합니까?")) return; const newLogs = []; const today = new Date(); for (let i = 0; i < 3; i++) { const date = new Date(today); date.setDate(today.getDate() - i); const logCount = Math.floor(Math.random() * 10) + 15; for (let j = 0; j < logCount; j++) { const eq = profile.equipment[Math.floor(Math.random() * profile.equipment.length)]; const isBadWeather = Math.random() < 0.2; const baseError = isBadWeather ? (eq.manualThreshold * 0.7 + Math.random() * 5) : (2 + Math.random() * 3); const successScore = baseError > eq.manualThreshold * 0.9 ? Math.floor(1 + Math.random() * 5) : (baseError > eq.manualThreshold * 0.6 ? Math.floor(6 + Math.random() * 3) : Math.floor(8 + Math.random() * 3)); const startTime = new Date(date); startTime.setHours(Math.floor(Math.random() * 23), Math.floor(Math.random() * 60)); const endTime = new Date(startTime.getTime() + (30 + Math.floor(Math.random() * 90)) * 60000); const data = []; let curTime = new Date(startTime); const p0 = [profile.location.coords.lat+Math.random()*0.5, profile.location.coords.lon+Math.random()*0.5]; const p1 = [profile.location.coords.lat+Math.random()*0.5, profile.location.coords.lon+Math.random()*0.5]; const p2 = [profile.location.coords.lat+Math.random()*0.5, profile.location.coords.lon+Math.random()*0.5]; let step = 0; while (curTime <= endTime) { const err = Math.max(1.0, baseError + (Math.random() - 0.5) * 4); const entry = { date: curTime.toISOString(), error_rate: parseFloat(err.toFixed(2))}; if (eq.usesGeoData) { const progress = step / ((endTime - startTime) / 60000 || 1); const pos = getPointOnBezierCurve(progress, p0, p1, p2); entry.lat = pos[0]; entry.lon = pos[1]; } data.push(entry); curTime.setMinutes(curTime.getMinutes() + 1); step++; } newLogs.push({ id: Date.now() + i * 100 + j, startTime: startTime.toISOString(), endTime: endTime.toISOString(), equipment: eq.name, successScore, gnssErrorData: data }); } } setLogs(newLogs.sort((a, b) => new Date(b.startTime) - new Date(a.startTime))); alert(`${newLogs.length}개의 테스트 피드백이 생성되었습니다.`); };
+    const generateMockLogs = () => { if (!window.confirm("기존 피드백을 삭제하고, 최근 100일간의 테스트 데이터를 대량 생성합니까?")) return; const newLogs = []; const today = new Date(); for (let i = 0; i < 100; i++) { const date = new Date(today); date.setDate(today.getDate() - i); const logCount = Math.floor(Math.random() * 4) + 5; for (let j = 0; j < logCount; j++) { const eq = profile.equipment[Math.floor(Math.random() * profile.equipment.length)]; const isBadWeather = Math.random() < 0.2; const baseError = isBadWeather ? (eq.manualThreshold * 0.7 + Math.random() * 5) : (2 + Math.random() * 3); const successScore = baseError > eq.manualThreshold * 0.9 ? Math.floor(1 + Math.random() * 4) : (baseError > eq.manualThreshold * 0.6 ? Math.floor(4 + Math.random() * 4) : Math.floor(8 + Math.random() * 3)); const startTime = new Date(date); startTime.setHours(Math.floor(Math.random() * 23), Math.floor(Math.random() * 60)); const endTime = new Date(startTime.getTime() + (30 + Math.floor(Math.random() * 90)) * 60000); const data = []; let curTime = new Date(startTime); const p0 = [profile.location.coords.lat+Math.random()*0.5, profile.location.coords.lon+Math.random()*0.5]; const p1 = [profile.location.coords.lat+Math.random()*0.5, profile.location.coords.lon+Math.random()*0.5]; const p2 = [profile.location.coords.lat+Math.random()*0.5, profile.location.coords.lon+Math.random()*0.5]; let step = 0; while (curTime < endTime) { const err = Math.max(1.0, baseError + (Math.random() - 0.5) * 4); const entry = { date: curTime.toISOString(), error_rate: parseFloat(err.toFixed(2))}; if (eq.usesGeoData) { const progress = step / ((endTime.getTime() - startTime.getTime()) / 60000 || 1); const pos = getPointOnBezierCurve(progress, p0, p1, p2); entry.lat = pos[0]; entry.lon = pos[1]; } data.push(entry); curTime.setMinutes(curTime.getMinutes() + 1); step++; } newLogs.push({ id: Date.now() + i * 100 + j, startTime: startTime.toISOString(), endTime: endTime.toISOString(), equipment: eq.name, successScore, gnssErrorData: data }); } } setLogs(newLogs.sort((a, b) => new Date(b.startTime) - new Date(a.startTime))); alert(`${newLogs.length}개의 테스트 피드백이 생성되었습니다.`); };
     const clearLogs = () => { if (window.confirm("모든 피드백 데이터를 삭제하시겠습니까?")) { setLogs([]); alert("모든 피드백이 삭제되었습니다."); }};
     const resetAppState = () => { if (window.confirm("앱의 모든 로컬 데이터(프로필, 피드백 로그)를 삭제하고 초기 상태로 되돌리시겠습니까?")) { localStorage.clear(); alert("앱 상태가 초기화되었습니다. 페이지를 새로고침합니다."); window.location.reload(); }};
     return (<div className="bg-gray-800 p-6 md:p-8 rounded-xl border border-gray-700 max-w-2xl mx-auto"><div className="flex items-center mb-6"><button onClick={goBack} className="mr-4 p-2 rounded-full hover:bg-gray-700"><ArrowLeft className="w-6 h-6" /></button><h2 className="text-xl md:text-2xl font-bold text-white">개발자 테스트 도구</h2></div><div className="space-y-6"><div><h3 className="text-lg font-semibold text-white mb-3">피드백 데이터 관리</h3><div className="flex space-x-4"><button onClick={generateMockLogs} className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><TestTube2 size={20} /><span>테스트 데이터 생성</span></button><button onClick={clearLogs} className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><Eraser size={20} /><span>모든 데이터 삭제</span></button></div></div><div><h3 className="text-lg font-semibold text-white mb-3 text-red-400">위험 영역</h3><div className="flex space-x-4"><button onClick={resetAppState} className="w-full bg-red-800 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><RefreshCw size={20} /><span>앱 상태 전체 초기화</span></button></div></div></div></div>);
