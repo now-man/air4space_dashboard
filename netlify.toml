@@ -4,6 +4,6 @@
 
 [[redirects]]
   from = "/api/csv"
-  to = "https://drive.google.com/uc?export=download&id=19191SkOve-WWZsWK8SvWPPgdMrJsIoT9"
+  to = "/.netlify/functions/fetch-csv"
   status = 200
   force = true

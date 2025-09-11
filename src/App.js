@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceArea, BarChart, Bar, ScatterChart, Scatter, ZAxis, Cell, Label } from 'recharts';
 import { DayPicker } from 'react-day-picker';
 import { ko } from 'date-fns/locale';
-import { Zap, Settings, ShieldAlert, BotMessageSquare, Plus, Trash2, Save, ArrowLeft, UploadCloud, TestTube2, BrainCircuit, Eraser, Lightbulb, RefreshCw, PlayCircle, MapPin, Edit3, Compass, Activity, Calendar as CalendarIcon, MoreVertical, X, Edit, Home, BarChart3, Target, PlusCircle, Pencil, Square, Circle, Triangle, Star, Diamond } from 'lucide-react';
+import { Zap, Settings, ShieldAlert, BotMessageSquare, Plus, Trash2, Save, ArrowLeft, UploadCloud, TestTube2, BrainCircuit, Eraser, Lightbulb, RefreshCw, PlayCircle, MapPin, Edit3, Compass, Activity, Calendar as CalendarIcon, MoreVertical, X, Edit, Home, BarChart3, Target, PlusCircle, Pencil, Square, Circle, Triangle, Star, Diamond, Hexagon, Aperture } from 'lucide-react';
 import { MapContainer, TileLayer, CircleMarker, Tooltip as LeafletTooltip, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'react-day-picker/dist/style.css';
@@ -93,7 +93,7 @@ export default function App() {
       const FETCH_URL = "/api/csv";
       setForecastStatus({ isLoading: true, error: null });
       fetch(FETCH_URL)
-          .then(response => { if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`); return response.text(); })
+          .then(response => { if (!response.ok) throw new Error('Failed to fetch'); return response.text(); })
           .then(csvText => {
               const lines = csvText.trim().split('\n');
               if (lines.length < 2) throw new Error('CSV data is empty or has no content.');
@@ -198,7 +198,7 @@ const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold })
         real_gnss: { name: '실제 GNSS', color: '#fca5a5', axis: 'left' },
         tec_value: { name: 'TEC', color: '#60a5fa', axis: 'right' },
         xrsb:      { name: 'XRSB', color: '#a78bfa', axis: 'right' },
-        kp10:      { name: 'Kp10', color: '#facc15', axis: 'right' },
+        kp10:      { name: 'Kp', color: '#facc15', axis: 'right' },
         dst:       { name: 'Dst', color: '#4ade80', axis: 'right' },
     };
     const [visibleData, setVisibleData] = useState({ fore_gnss: true, real_gnss: false, tec_value: true, xrsb: false, kp10: false, dst: false });
@@ -248,7 +248,7 @@ const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold })
                         <YAxis yAxisId="left" label={{ value: 'GNSS 오차(m)', angle: -90, position: 'insideLeft', fill: '#A0AEC0' }} stroke="#F56565" />
                         <YAxis yAxisId="right" orientation="right" label={{ value: '우주기상 지수', angle: 90, position: 'insideRight', fill: '#A0AEC0' }} stroke="#A0AEC0" />
                         <Tooltip contentStyle={{ backgroundColor: '#1A202C' }} labelFormatter={(unixTime) => formatDate(unixTime, 'full')} />
-                        <Legend />
+                        <Legend wrapperStyle={{fontSize: "12px"}}/>
                         {Object.entries(dataKeys).map(([key, { name, color, axis }]) => (
                              visibleData[key] && <Line key={key} yAxisId={axis} type="monotone" dataKey={key} name={name} stroke={color} dot={false} />
                         ))}
@@ -369,6 +369,8 @@ const ShapeIcon = ({ shape, color = "white" }) => {
         case 'diamond': return <Diamond {...props} fill={color} />;
         case 'star': return <Star {...props} fill={color} />;
         case 'cross': return <Plus {...props} />;
+        case 'hexagon': return <Hexagon {...props} fill={color} />;
+        case 'aperture': return <Aperture {...props} />;
         default: return <Circle {...props} fill={color} />;
     }
 };
@@ -378,7 +380,7 @@ const AnalysisView = ({ logs, profile, activeUnitThreshold }) => {
     const [pcaSelectedEquipment, setPcaSelectedEquipment] = useState('전체');
 
     const shapeMap = useMemo(() => {
-        const shapes = ['circle', 'triangle', 'square', 'diamond', 'star', 'cross'];
+        const shapes = ['circle', 'triangle', 'square', 'diamond', 'star', 'cross', 'hexagon', 'aperture'];
         return profile.equipment.reduce((acc, eq, index) => {
             acc[eq.name] = shapes[index % shapes.length];
             return acc;
@@ -432,13 +434,12 @@ const AnalysisView = ({ logs, profile, activeUnitThreshold }) => {
             const allErrors = logsForPca.map(l => Math.max(...l.gnssErrorData.map(d => d.error_rate)));
             const avgMaxError = allErrors.reduce((a, b) => a + b, 0) / allErrors.length;
             const equipmentOffsets = profile.equipment.reduce((acc, eq, i) => {
-                acc[eq.name] = (i - (profile.equipment.length - 1) / 2) * 0.15;
+                acc[eq.name] = (i - (profile.equipment.length - 1) / 2) * 0.08;
                 return acc;
             }, {});
-
             pcaData = logsForPca.map(log => {
                 const maxError = Math.max(...log.gnssErrorData.map(d => d.error_rate));
-                const base_pc1 = (maxError - avgMaxError) * 0.05;
+                const base_pc1 = (maxError - avgMaxError) * 0.04;
                 const base_pc2 = equipmentOffsets[log.equipment] || 0;
                 
                 const noise_x = (Math.random() - 0.5) * 0.2;
