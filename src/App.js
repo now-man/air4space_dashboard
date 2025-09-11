@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceArea, BarChart, Bar, ScatterChart, Scatter, ZAxis, Cell, Label } from 'recharts';
 import { DayPicker } from 'react-day-picker';
 import { ko } from 'date-fns/locale';
-import { Zap, Settings, ShieldAlert, BotMessageSquare, Plus, Trash2, Save, ArrowLeft, UploadCloud, TestTube2, BrainCircuit, Eraser, Lightbulb, RefreshCw, PlayCircle, MapPin, Edit3, Compass, Activity, Calendar as CalendarIcon, MoreVertical, X, Edit, Home, BarChart3, Target, PlusCircle, Pencil, Square, Circle, Triangle, Star, Diamond, Hexagon, Aperture, Search } from 'lucide-react';
+import { Zap, Settings, ShieldAlert, BotMessageSquare, Plus, Trash2, Save, ArrowLeft, UploadCloud, TestTube2, BrainCircuit, Eraser, Lightbulb, RefreshCw, PlayCircle, MapPin, Edit3, Compass, Activity, Calendar as CalendarIcon, MoreVertical, X, Edit, Home, BarChart3, Target, PlusCircle, Pencil, Square, Circle, Triangle, Star, Diamond, Hexagon, Aperture, Search, ChevronDown } from 'lucide-react';
 import { MapContainer, TileLayer, CircleMarker, Tooltip as LeafletTooltip, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'react-day-picker/dist/style.css';
@@ -269,13 +269,20 @@ const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold, r
                     </LineChart>
                   </ResponsiveContainer>)}
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-x-4 gap-y-2 mt-4 pt-4 border-t border-gray-700">
-                {Object.entries(dataKeys).map(([key, {name}]) => (
-                    <label key={key} className="flex items-center gap-2 cursor-pointer text-sm text-gray-300">
-                        <input type="checkbox" checked={visibleData[key]} onChange={e => setVisibleData(v => ({...v, [key]: e.target.checked}))} className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-500 rounded" /> 
-                        {name}
-                    </label>
-                ))}
+            <div className="flex flex-col xl:flex-row justify-between items-center mt-4 pt-4 border-t border-gray-700 gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 w-full xl:w-auto">
+                    {Object.entries(dataKeys).map(([key, {name}]) => (
+                        <label key={key} className="flex items-center gap-2 cursor-pointer text-sm text-gray-300">
+                            <input type="checkbox" checked={visibleData[key]} onChange={e => setVisibleData(v => ({...v, [key]: e.target.checked}))} className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-500 rounded" /> 
+                            {name}
+                        </label>
+                    ))}
+                </div>
+                {timeRange.start && <div className="flex items-center gap-2 w-full xl:w-auto pt-4 xl:pt-0 border-t border-gray-700 xl:border-none">
+                    <input type="datetime-local" value={toLocalISOString(new Date(timeRange.start))} onChange={e => setTimeRange(r => ({...r, start: new Date(e.target.value).getTime()}))} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-full"/>
+                    <span className="text-gray-400">-</span>
+                    <input type="datetime-local" value={toLocalISOString(new Date(timeRange.end))} onChange={e => setTimeRange(r => ({...r, end: new Date(e.target.value).getTime()}))} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-full"/>
+                </div>}
             </div>
         </div>
     );
@@ -301,41 +308,127 @@ const FeedbackChart = ({ data, equipment }) => { const activeThreshold = equipme
 const FeedbackMap = ({ data, equipment, isAnimating, animationProgress }) => { const activeThreshold = equipment.thresholdMode === 'auto' && equipment.autoThreshold ? equipment.autoThreshold : equipment.manualThreshold; const bounds = useMemo(() => data.length > 0 ? L.latLngBounds(data.map(p => [p.lat, p.lon])) : null, [data]); const animatedPosition = useMemo(() => { if(!isAnimating || data.length < 2) return null; const totalPoints = data.length - 1; const currentIndex = Math.min(Math.floor(animationProgress * totalPoints), totalPoints - 1); const nextIndex = Math.min(currentIndex + 1, totalPoints); const segmentProgress = (animationProgress * totalPoints) - currentIndex; const p1 = data[currentIndex]; const p2 = data[nextIndex]; return { lat: p1.lat + (p2.lat - p1.lat) * segmentProgress, lon: p1.lon + (p2.lon - p1.lon) * segmentProgress, error: p1.error_rate }; }, [isAnimating, animationProgress, data]); return (<div className="mt-2 h-56 rounded-lg overflow-hidden relative"><MapContainer center={data[0] ? [data[0].lat, data[0].lon] : [36.6, 127.4]} zoom={11} style={{ height: "100%", width: "100%" }} scrollWheelZoom={false}> <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; CARTO' /> {isAnimating ? (<Polyline positions={data.map(p => [p.lat, p.lon])} color="#6b7280" weight={3} dashArray="5, 10" />) : (data.slice(1).map((p, i) => (<Polyline key={i} positions={[[data[i].lat, data[i].lon], [p.lat, p.lon]]} color={getErrorColor(data[i].error_rate, activeThreshold)} weight={5} />)))} {animatedPosition && <CircleMarker center={animatedPosition} radius={7} pathOptions={{ color: '#fff', fillColor: getErrorColor(animatedPosition.error, activeThreshold), weight: 2, fillOpacity: 1 }} />} <AutoFitBounds bounds={bounds} /> </MapContainer></div>); };
 const MissionAdvisory = ({ status, maxError, threshold }) => (<div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700"><h2 className="text-lg font-semibold mb-4 text-white flex items-center"><Lightbulb size={20} className="mr-2 text-yellow-300" />금일 임무 권고 (XAI)</h2><div className="flex items-start gap-3"><Zap size={24} className={`mt-1 ${status.color}`} /><p className="text-sm text-gray-300"><strong>분석:</strong> 24시간 내 최대 GNSS 오차는 <strong>{maxError.toFixed(2)}m</strong>로 예측됩니다. 이는 부대 임계값 {threshold.toFixed(2)}m 대비 <strong>{status.label}</strong> 수준입니다.<br /><strong>권고:</strong> {status.label === "위험" ? "정밀 타격 및 GNSS 의존도가 높은 임무 수행 시 각별한 주의가 필요합니다." : status.label === "주의" ? "GNSS 민감 장비 운용 시 주의가 필요하며, 대체 항법 수단을 숙지하십시오." : "모든 임무 정상 수행 가능합니다."}</p></div></div>);
 const TodoList = ({ todoList, addTodo, updateTodo, deleteTodo }) => {
-    const [editingTodo, setEditingTodo] = useState(null); const [menuTodo, setMenuTodo] = useState(null); const handleAdd = () => { const time = document.getElementById('todoTime').value; const text = document.getElementById('todoText').value; if(text) { addTodo({time, text, tag: 'Briefing'}); document.getElementById('todoText').value = ''; } }; const handleSave = (id) => { const time = document.getElementById(`edit-time-${id}`).value; const text = document.getElementById(`edit-text-${id}`).value; updateTodo({ ...editingTodo, time, text }); setEditingTodo(null); }; const handleEditClick = () => { setEditingTodo(menuTodo); setMenuTodo(null); }; const handleDeleteClick = () => { deleteTodo(menuTodo.id); setMenuTodo(null); };
-    return (<> {menuTodo && (<div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50" onClick={() => setMenuTodo(null)}><div className="bg-gray-800 border border-gray-600 rounded-lg p-6 w-full max-w-xs space-y-4" onClick={e => e.stopPropagation()}><p className="text-lg font-semibold text-white text-center">"{menuTodo.text}"</p><div className="flex flex-col space-y-3"><button onClick={handleEditClick} className="w-full text-left px-4 py-2.5 text-sm bg-gray-700 hover:bg-gray-600 rounded-md flex items-center gap-3 transition-colors"><Edit size={16}/> 수정하기</button><button onClick={handleDeleteClick} className="w-full text-left px-4 py-2.5 text-sm text-red-400 bg-red-900/50 hover:bg-red-900/80 rounded-md flex items-center gap-3 transition-colors"><Trash2 size={16}/> 삭제하기</button></div></div></div>)} <div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700"><h2 className="text-lg font-semibold mb-4 text-white flex items-center"><Activity size={20} className="mr-2" />금일 주요 활동</h2><div className="space-y-2 max-h-56 overflow-y-auto pr-2">{todoList.map(item => (<div key={item.id} className="flex items-center gap-3 text-sm group"> {editingTodo?.id === item.id ? (<><input type="time" id={`edit-time-${item.id}`} defaultValue={item.time} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-auto" /><input type="text" id={`edit-text-${item.id}`} defaultValue={item.text} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm flex-grow" /><button onClick={() => handleSave(item.id)} className="p-1 text-green-400 hover:text-green-300"><Save size={16}/></button><button onClick={() => setEditingTodo(null)} className="p-1 text-gray-400 hover:text-white"><X size={16}/></button></>) : (<><span className="font-semibold text-cyan-400">{item.time}</span><span className="flex-grow">{item.text}</span><span className="text-xs bg-gray-700 px-2 py-0.5 rounded-full">{item.tag}</span><button onClick={() => setMenuTodo(item)} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-white"><MoreVertical size={16}/></button></>)}</div>))}</div><div className="flex gap-2 mt-2"><input type="time" defaultValue="12:00" className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-auto" id="todoTime" /><input type="text" placeholder="활동 내용" className="bg-gray-900 border border-gray-600 rounded p-1 text-sm flex-grow" id="todoText" /><button onClick={handleAdd} className="bg-blue-600 hover:bg-blue-700 rounded p-2"><Plus size={16} /></button></div></div></>);
+    const [newTodo, setNewTodo] = useState({ text: '', time: '12:00', tag: '브리핑' });
+    const [editingTodo, setEditingTodo] = useState(null);
+    const [menuOpenFor, setMenuOpenFor] = useState(null);
+    const [tagMenuOpenFor, setTagMenuOpenFor] = useState(null);
+    const [customTag, setCustomTag] = useState('');
+    const menuRef = useRef(null);
+    const tagMenuRef = useRef(null);
+
+    const DEFAULT_TAGS = ['브리핑', '임무', '정비', '보고'];
+    const uniqueTags = useMemo(() => Array.from(new Set([...DEFAULT_TAGS, ...todoList.map(t => t.tag)])), [todoList]);
+
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (menuRef.current && !menuRef.current.contains(event.target)) setMenuOpenFor(null);
+            if (tagMenuRef.current && !tagMenuRef.current.contains(event.target)) setTagMenuOpenFor(null);
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    const handleAdd = () => {
+        if (newTodo.text) {
+            addTodo(newTodo);
+            setNewTodo({ text: '', time: '12:00', tag: '브리핑' });
+        }
+    };
+    const handleSave = (id) => {
+        updateTodo(editingTodo);
+        setEditingTodo(null);
+    };
+
+    const handleCustomTagSave = (id) => {
+        if (customTag) {
+            if (id === 'new') {
+                setNewTodo(prev => ({...prev, tag: customTag}));
+            } else {
+                setEditingTodo(prev => ({...prev, tag: customTag}));
+            }
+            setCustomTag('');
+            setTagMenuOpenFor(null);
+        }
+    }
+    
+    return (
+      <div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700">
+        <h2 className="text-lg font-semibold mb-4 text-white flex items-center"><Activity size={20} className="mr-2" />금일 주요 활동</h2>
+        <div className="space-y-2 max-h-56 overflow-y-auto pr-2">
+            {todoList.map(item => (
+                <div key={item.id} className="flex items-center gap-3 text-sm group relative">
+                    {editingTodo?.id === item.id ? (
+                        <>
+                            <input type="time" value={editingTodo.time} onChange={e => setEditingTodo({...editingTodo, time: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-auto" />
+                            <input type="text" value={editingTodo.text} onChange={e => setEditingTodo({...editingTodo, text: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm flex-grow" />
+                            <div className="relative">
+                                <button onClick={() => setTagMenuOpenFor(tagMenuOpenFor === item.id ? null : item.id)} className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-0.5 rounded-full flex items-center gap-1">{editingTodo.tag} <ChevronDown size={12}/></button>
+                                {tagMenuOpenFor === item.id && (
+                                    <div ref={tagMenuRef} className="absolute z-20 right-0 mt-2 w-40 bg-gray-700 border border-gray-600 rounded-md shadow-lg p-2 space-y-1">
+                                        {uniqueTags.map(tag => <button key={tag} onClick={() => { setEditingTodo({...editingTodo, tag}); setTagMenuOpenFor(null); }} className="w-full text-left px-2 py-1 hover:bg-gray-600 rounded">{tag}</button>)}
+                                        <div className="flex gap-1"><input value={customTag} onChange={e => setCustomTag(e.target.value)} placeholder="직접 입력" className="w-full bg-gray-800 text-xs p-1 rounded"/><button onClick={() => handleCustomTagSave(item.id)} className="bg-blue-600 p-1 rounded"><Save size={12}/></button></div>
+                                    </div>
+                                )}
+                            </div>
+                            <button onClick={() => handleSave(item.id)} className="p-1 text-green-400 hover:text-green-300"><Save size={16}/></button>
+                            <button onClick={() => setEditingTodo(null)} className="p-1 text-gray-400 hover:text-white"><X size={16}/></button>
+                        </>
+                    ) : (
+                        <>
+                            <span className="font-semibold text-cyan-400">{item.time}</span>
+                            <span className="flex-grow">{item.text}</span>
+                            <span className="text-xs bg-gray-700 px-2 py-0.5 rounded-full">{item.tag}</span>
+                            <button onClick={() => setMenuOpenFor(menuOpenFor === item.id ? null : item.id)} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-white"><MoreVertical size={16}/></button>
+                            {menuOpenFor === item.id && (
+                                <div ref={menuRef} className="absolute z-20 right-0 top-6 w-32 bg-gray-700 border border-gray-600 rounded-md shadow-lg p-2 space-y-1">
+                                    <button onClick={() => { setEditingTodo(item); setMenuOpenFor(null); }} className="w-full text-left px-2 py-1 hover:bg-gray-600 rounded flex items-center gap-2"><Edit size={14}/> 수정</button>
+                                    <button onClick={() => deleteTodo(item.id)} className="w-full text-left px-2 py-1 hover:bg-gray-600 rounded flex items-center gap-2 text-red-400"><Trash2 size={14}/> 삭제</button>
+                                </div>
+                            )}
+                        </>
+                    )}
+                </div>
+            ))}
+        </div>
+        <div className="flex gap-2 mt-4 pt-4 border-t border-gray-700">
+            <input type="time" value={newTodo.time} onChange={e => setNewTodo({...newTodo, time: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-auto" />
+            <input type="text" placeholder="활동 내용" value={newTodo.text} onChange={e => setNewTodo({...newTodo, text: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm flex-grow" />
+             <div className="relative">
+                <button onClick={() => setTagMenuOpenFor(tagMenuOpenFor === 'new' ? null : 'new')} className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-0.5 rounded-full flex items-center gap-1 h-full">{newTodo.tag} <ChevronDown size={12}/></button>
+                {tagMenuOpenFor === 'new' && (
+                    <div ref={tagMenuRef} className="absolute z-20 right-0 bottom-full mb-2 w-40 bg-gray-700 border border-gray-600 rounded-md shadow-lg p-2 space-y-1">
+                        {uniqueTags.map(tag => <button key={tag} onClick={() => { setNewTodo({...newTodo, tag}); setTagMenuOpenFor(null); }} className="w-full text-left px-2 py-1 hover:bg-gray-600 rounded">{tag}</button>)}
+                        <div className="flex gap-1"><input value={customTag} onChange={e => setCustomTag(e.target.value)} placeholder="직접 입력" className="w-full bg-gray-800 text-xs p-1 rounded"/><button onClick={() => handleCustomTagSave('new')} className="bg-blue-600 p-1 rounded"><Save size={12}/></button></div>
+                    </div>
+                )}
+            </div>
+            <button onClick={handleAdd} className="bg-blue-600 hover:bg-blue-700 rounded p-2"><Plus size={16} /></button>
+        </div>
+      </div>
+    );
 };
 const MissionPlanner = ({ allForecastData, onRecommendation }) => {
-    const [missionDate, setMissionDate] = useState(() => new Date(new Date().setDate(new Date().getDate() + 1)).toISOString().split('T')[0]);
-    const [startTime, setStartTime] = useState("09:00");
-    const [endTime, setEndTime] = useState("18:00");
+    const [searchStart, setSearchStart] = useState(() => toLocalISOString(new Date(new Date().setDate(new Date().getDate() + 1))));
+    const [searchEnd, setSearchEnd] = useState(() => toLocalISOString(new Date(new Date().setDate(new Date().getDate() + 2))));
     const [duration, setDuration] = useState(3);
     const [result, setResult] = useState(null);
 
     const handleRecommend = () => {
-        const missionDayStart = new Date(`${missionDate}T00:00:00`).getTime();
-        const missionDayEnd = new Date(`${missionDate}T23:59:59`).getTime();
+        const searchStartTs = new Date(searchStart).getTime();
+        const searchEndTs = new Date(searchEnd).getTime();
 
-        const searchStart = new Date(`${missionDate}T${startTime}`).getTime();
-        const searchEnd = new Date(`${missionDate}T${endTime}`).getTime();
-
-        const relevantData = allForecastData.filter(d => d.timestamp >= missionDayStart && d.timestamp <= missionDayEnd);
-        if (relevantData.length === 0) {
-            setResult("해당 날짜의 예측 데이터가 없습니다.");
+        const relevantData = allForecastData.filter(d => d.timestamp >= searchStartTs && d.timestamp <= searchEndTs);
+        if (relevantData.length < duration) {
+            setResult("해당 시간 범위의 예측 데이터가 작전 시간보다 짧습니다.");
             onRecommendation(null);
             return;
         }
 
-        const windowSize = duration; // Assuming 1-hour data intervals
         let minSum = Infinity;
         let bestStartTime = null;
 
-        for (let i = 0; i <= relevantData.length - windowSize; i++) {
-            const window = relevantData.slice(i, i + windowSize);
-            const windowStart = window[0].timestamp;
-            const windowEnd = window[window.length - 1].timestamp;
-            
-            if (windowStart < searchStart || windowEnd > searchEnd) continue;
-
+        for (let i = 0; i <= relevantData.length - duration; i++) {
+            const window = relevantData.slice(i, i + duration);
             const currentSum = window.reduce((sum, d) => sum + d.fore_gnss, 0);
 
             if (currentSum < minSum) {
@@ -345,10 +438,11 @@ const MissionPlanner = ({ allForecastData, onRecommendation }) => {
         }
 
         if (bestStartTime) {
-            setResult(`최적 작전 시작 시간: ${formatDate(bestStartTime, 'full')}`);
-            onRecommendation({start: bestStartTime, end: bestStartTime + duration * 3600 * 1000});
+            const recommendedEnd = bestStartTime + duration * 3600 * 1000;
+            setResult(`최적 작전 시간: ${formatDate(bestStartTime, 'full')} ~ ${formatDate(recommendedEnd, 'time')}`);
+            onRecommendation({start: bestStartTime, end: recommendedEnd});
         } else {
-            setResult("추천 가능한 시간대를 찾을 수 없습니다. (범위 또는 데이터 확인)");
+            setResult("추천 가능한 시간대를 찾을 수 없습니다.");
             onRecommendation(null);
         }
     };
@@ -358,18 +452,12 @@ const MissionPlanner = ({ allForecastData, onRecommendation }) => {
             <h2 className="text-lg font-semibold mb-4 text-white">최적 작전 시간 추천</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
                 <div>
-                    <label className="text-xs text-gray-400">날짜</label>
-                    <input type="date" value={missionDate} min={new Date().toISOString().split('T')[0]} onChange={e => setMissionDate(e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm" />
+                    <label className="text-xs text-gray-400">탐색 시작 (날짜+시간)</label>
+                    <input type="datetime-local" value={searchStart} min={toLocalISOString(new Date())} onChange={e => setSearchStart(e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm" />
                 </div>
-                <div className="flex gap-2">
-                    <div>
-                        <label className="text-xs text-gray-400">시작</label>
-                        <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm" />
-                    </div>
-                    <div>
-                        <label className="text-xs text-gray-400">종료</label>
-                        <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm" />
-                    </div>
+                 <div>
+                    <label className="text-xs text-gray-400">탐색 종료 (날짜+시간)</label>
+                    <input type="datetime-local" value={searchEnd} min={searchStart} onChange={e => setSearchEnd(e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm" />
                 </div>
                 <div>
                     <label className="text-xs text-gray-400">작전 시간 (시간)</label>
@@ -381,7 +469,6 @@ const MissionPlanner = ({ allForecastData, onRecommendation }) => {
         </div>
     );
 };
-
 const DashboardView = ({ profile, allForecastData, forecastStatus, logs, deleteLog, todoList, addTodo, updateTodo, deleteTodo, activeUnitThreshold }) => {
     const [selectedDate, setSelectedDate] = useState(null);
     const [expandedLogId, setExpandedLogId] = useState(null);
@@ -411,10 +498,6 @@ const DashboardView = ({ profile, allForecastData, forecastStatus, logs, deleteL
         <style>{`.rdp-day_selected, .rdp-day_selected:focus-visible, .rdp-day_selected:hover { background-color: #0ea5e9 !important; color: white !important; } .rdp-button:hover:not([disabled]):not(.rdp-day_selected) { background-color: #374151 !important; } .rdp-day_today:not(.rdp-day_selected) { border: 1px solid #0ea5e9; color: #0ea5e9 !important; } .rdp { color: #d1d5db; --rdp-cell-size: 48px; } .rdp-nav_button { color: #0ea5e9 !important; }`}</style>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-6">
-                <div className={`p-4 md:p-6 rounded-xl flex items-center gap-4 ${overallStatus.bgColor} border border-gray-700`}>
-                    <div className="flex items-center gap-4"><div><p className="text-gray-400 text-sm">향후 24시간 종합 위험도</p><p className={`text-3xl font-bold ${overallStatus.color}`}>{overallStatus.label}</p></div></div>
-                    <div className="w-full flex justify-around pt-4 md:pt-0 md:pl-6 border-t md:border-t-0 md:border-l border-gray-600"><div><p className="text-gray-400 text-sm">최대 예상 오차</p><p className="text-3xl font-bold text-white">{maxError.toFixed(2)} m</p></div><div><p className="text-gray-400 text-sm">부대 임계값</p><p className="text-3xl font-bold text-cyan-400">{activeUnitThreshold.toFixed(2)} m</p></div></div>
-                </div>
                 <ForecastGraph allForecastData={allForecastData} forecastStatus={forecastStatus} activeUnitThreshold={activeUnitThreshold} recommendedRange={recommendedRange} />
                 <MissionPlanner allForecastData={allForecastData} onRecommendation={setRecommendedRange} />
                 <div className="lg:col-span-2 bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700">
@@ -429,6 +512,10 @@ const DashboardView = ({ profile, allForecastData, forecastStatus, logs, deleteL
                 </div>
             </div>
             <div className="space-y-6">
+                <div className={`p-4 md:p-6 rounded-xl flex items-center gap-4 ${overallStatus.bgColor} border border-gray-700`}>
+                    <div className="flex items-center gap-4"><div><p className="text-gray-400 text-sm">향후 24시간 종합 위험도</p><p className={`text-3xl font-bold ${overallStatus.color}`}>{overallStatus.label}</p></div></div>
+                    <div className="w-full flex justify-around pt-4 md:pt-0 md:pl-6 border-t md:border-t-0 md:border-l border-gray-600"><div><p className="text-gray-400 text-sm">최대 예상 오차</p><p className="text-3xl font-bold text-white">{maxError.toFixed(2)} m</p></div><div><p className="text-gray-400 text-sm">부대 임계값</p><p className="text-3xl font-bold text-cyan-400">{activeUnitThreshold.toFixed(2)} m</p></div></div>
+                </div>
                 <MissionAdvisory status={overallStatus} maxError={maxError} threshold={activeUnitThreshold} />
                 <TodoList todoList={todoList} addTodo={addTodo} updateTodo={updateTodo} deleteTodo={deleteTodo} />
                 <LiveMap threshold={activeUnitThreshold} center={profile.location.coords} />
@@ -525,17 +612,17 @@ const AnalysisView = ({ logs, profile, activeUnitThreshold }) => {
         let logsForPca = (pcaSelectedEquipment === '전체' ? logs : logs.filter(l => l.equipment === pcaSelectedEquipment)).filter(l => l.gnssErrorData);
         let pcaData = [];
         if (logsForPca.length > 2) {
-             const generateClusterPoint = (centers, spread) => {
+            const generateClusterPoint = (centers, spread) => {
                 const center = centers[Math.floor(Math.random() * centers.length)];
                 const angle = Math.random() * 2 * Math.PI;
-                const radius = Math.sqrt(Math.random()) * spread; // Bias towards center
-                const jitterX = (Math.random() - 0.5) * spread * 0.5; // Add some irregularity
+                const radius = Math.sqrt(Math.random()) * spread;
+                const jitterX = (Math.random() - 0.5) * spread * 0.5;
                 const jitterY = (Math.random() - 0.5) * spread * 0.5;
                 return { x: center.x + jitterX + radius * Math.cos(angle), y: center.y + jitterY + radius * Math.sin(angle) };
             };
             const successCenters = [{x: -0.25, y: -0.1}, {x: -0.15, y: -0.15}, {x:-0.3, y:0.05}];
             const failCenters = [{x: 0.25, y: 0.1}, {x: 0.15, y: 0.15}, {x:0.3, y:-0.05}];
-            const normalCenters = [{x: 0, y: 0}, {x: -0.1, y: 0.1}, {x: 0.1, y: -0.1}];
+            const normalCenters = [{x: 0.05, y: 0.05}, {x: -0.05, y: 0.05}, {x: 0.05, y: -0.05}];
 
             pcaData = logsForPca.map(log => {
                 let scoreCategory;
@@ -619,10 +706,10 @@ const AnalysisView = ({ logs, profile, activeUnitThreshold }) => {
                             <ScatterChart margin={{ top: 20, right: 30, bottom: 20, left: 20 }}>
                                 <CartesianGrid stroke="#4A5568" strokeDasharray="3 3"/>
                                 <XAxis type="number" dataKey="pc1" domain={[-0.5, 0.5]} stroke="#A0AEC0" tickFormatter={(v) => v.toFixed(1)}>
-                                     <Label value="PC1 (GNSS 오차 기반, 44.3%)" offset={-15} position="insideBottom" fill="#A0AEC0"/>
+                                     <Label value="PC1 (44.3%)" offset={-15} position="insideBottom" fill="#A0AEC0"/>
                                 </XAxis>
                                 <YAxis type="number" dataKey="pc2" domain={[-0.3, 0.3]} stroke="#A0AEC0" tickFormatter={(v) => v.toFixed(1)}>
-                                     <Label value="PC2 (장비 특성 기반, 19.2%)" angle={-90} offset={0} position="insideLeft" fill="#A0AEC0" style={{ textAnchor: 'middle' }}/>
+                                     <Label value="PC2 (19.2%)" angle={-90} offset={0} position="insideLeft" fill="#A0AEC0" style={{ textAnchor: 'middle' }}/>
                                 </YAxis>
                                 <Tooltip content={<CustomScatterTooltip />} cursor={{ strokeDasharray: '3 3' }} />
                                 {Object.entries(pcaDataByEquipment).map(([eqName, eqData]) => (
