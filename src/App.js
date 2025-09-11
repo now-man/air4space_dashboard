@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceArea, BarChart, Bar, ScatterChart, Scatter, ZAxis } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceArea, BarChart, Bar, ScatterChart, Scatter, ZAxis, Cell } from 'recharts';
 import { DayPicker } from 'react-day-picker';
 import { ko } from 'date-fns/locale';
 import { Zap, Settings, ShieldAlert, BotMessageSquare, Plus, Trash2, Save, ArrowLeft, UploadCloud, TestTube2, BrainCircuit, Eraser, Lightbulb, RefreshCw, PlayCircle, MapPin, Edit3, Compass, Activity, Calendar as CalendarIcon, MoreVertical, X, Edit, Home, BarChart3, Target, PlusCircle, Pencil } from 'lucide-react';
@@ -214,6 +214,7 @@ const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold })
     }, [timeRange]);
     
     const formatXAxis = (tick) => {
+        if (!timeRange.start) return '';
         const duration = timeRange.end - timeRange.start;
         return duration <= 2 * 24 * 3600 * 1000 ? formatDate(tick, 'time') : formatDate(tick, 'date');
     };
@@ -321,25 +322,26 @@ const DashboardView = ({ profile, allForecastData, forecastStatus, logs, deleteL
 const CustomScatterTooltip = ({ active, payload }) => {
     if (active && payload && payload.length) {
         const data = payload[0].payload;
+        const duration = data.startTime && data.endTime ? Math.round((new Date(data.endTime) - new Date(data.startTime)) / 60000) : null;
         return (
             <div className="bg-gray-900/80 border border-gray-600 p-3 rounded-lg text-sm text-gray-200 backdrop-blur-sm">
                 <p><strong>장비:</strong> {data.equipment}</p>
                 <p><strong>성공점수:</strong> {data.successScore}점</p>
+                {data.startTime && <p><strong>작전 날짜:</strong> {formatDate(data.startTime, 'date')}</p>}
+                {duration != null && <p><strong>진행 시간:</strong> {duration}분</p>}
                 {data.maxError != null && <p><strong>최대 오차:</strong> {data.maxError.toFixed(2)}m</p>}
-                {data.avg_tec_during_mission != null && <p><strong>(가상)평균 TEC:</strong> {data.avg_tec_during_mission.toFixed(2)}</p>}
             </div>
         );
     }
     return null;
 };
 const StatCard = ({ title, value, icon, color }) => (<div className="bg-gray-800 p-4 rounded-xl flex items-center gap-4 border border-gray-700"><div className={`p-3 rounded-lg bg-${color}-500/20 text-${color}-400`}>{icon}</div><div><p className="text-gray-400 text-sm">{title}</p><p className="text-2xl font-bold text-white">{value}</p></div></div>);
-const AnalysisView = ({ logs, profile, allForecastData }) => {
+const AnalysisView = ({ logs, profile }) => {
     const [selectedEquipment, setSelectedEquipment] = useState(profile.equipment[0]?.name || '');
 
     const analysisData = useMemo(() => {
         if (logs.length === 0) return null;
 
-        // --- All analysis data calculation is now in one place ---
         const totalLogs = logs.length;
         const avgScore = logs.reduce((acc, log) => acc + log.successScore, 0) / totalLogs;
         const highErrorLogs = logs.filter(l => l.gnssErrorData && l.gnssErrorData.some(d => d.lat) && Math.max(...l.gnssErrorData.map(d => d.error_rate)) > profile.unitManualThreshold);
@@ -365,7 +367,7 @@ const AnalysisView = ({ logs, profile, allForecastData }) => {
         const thresholdAnalysis = { data: [], autoThreshold: null };
         if (selectedEquipment) {
             const equipmentLogs = logs.filter(l => l.equipment === selectedEquipment && l.gnssErrorData);
-            thresholdAnalysis.data = equipmentLogs.map(log => ({ successScore: log.successScore, maxError: Math.max(...log.gnssErrorData.map(d => d.error_rate)), equipment: log.equipment }));
+            thresholdAnalysis.data = equipmentLogs.map(log => ({ successScore: log.successScore, maxError: Math.max(...log.gnssErrorData.map(d => d.error_rate)), equipment: log.equipment, startTime: log.startTime, endTime: log.endTime }));
             const errRatesOnFailure = equipmentLogs.filter(l => l.successScore < 8).flatMap(l => l.gnssErrorData.map(d => d.error_rate));
             if (errRatesOnFailure.length >= 3) {
                 const p75 = [...errRatesOnFailure].sort((a, b) => a - b)[Math.floor(errRatesOnFailure.length * 0.75)];
@@ -373,40 +375,32 @@ const AnalysisView = ({ logs, profile, allForecastData }) => {
             }
         }
         
-        // --- PCA SIMULATION LOGIC ---
         let pcaData = [];
         const logsForPca = logs.filter(l => l.gnssErrorData);
         if (logsForPca.length > 2) {
             pcaData = logsForPca.map(log => {
-                let pc1, pc2;
-                const score = log.successScore;
-
-                if (score >= 8) { // Success cluster
-                    pc1 = -1.5 - Math.random() * 1.5;
-                    pc2 = -1.5 - Math.random() * 1.5;
-                } else if (score < 4) { // Fail cluster
-                    pc1 = 1.5 + Math.random() * 1.5;
-                    pc2 = 1.5 + Math.random() * 1.5;
-                } else { // Normal cluster (in the middle)
-                    pc1 = (Math.random() - 0.5) * 3;
-                    pc2 = (Math.random() - 0.5) * 3;
-                }
-                
-                return {
-                    pc1, pc2,
-                    successScore: log.successScore,
-                    equipment: log.equipment,
-                    maxError: Math.max(...log.gnssErrorData.map(d => d.error_rate))
-                };
+                let pc1, pc2; const score = log.successScore;
+                if (score >= 8) { pc1 = -1.5 + (Math.random() - 0.5) * 2.5; pc2 = -1.5 + (Math.random() - 0.5) * 2.5;
+                } else if (score < 4) { pc1 = 1.5 + (Math.random() - 0.5) * 2.5; pc2 = 1.5 + (Math.random() - 0.5) * 2.5;
+                } else { pc1 = (Math.random() - 0.5) * 4; pc2 = (Math.random() - 0.5) * 4; }
+                return { pc1, pc2, successScore: log.successScore, equipment: log.equipment, maxError: Math.max(...log.gnssErrorData.map(d => d.error_rate)), startTime: log.startTime, endTime: log.endTime };
             });
         }
+        
+        const pcaDataByEquipment = pcaData.reduce((acc, point) => {
+            acc[point.equipment] = acc[point.equipment] || [];
+            acc[point.equipment].push(point);
+            return acc;
+        }, {});
 
-        return { totalLogs, avgScore: avgScore.toFixed(1), highErrorLogs, timeOfDayData, trendData, equipmentData, thresholdAnalysis, pcaData };
+        return { totalLogs, avgScore: avgScore.toFixed(1), highErrorLogs, timeOfDayData, trendData, equipmentData, thresholdAnalysis, pcaDataByEquipment };
     }, [logs, profile, selectedEquipment]);
 
     if (!analysisData) return <div className="text-center text-gray-400 p-8">분석할 피드백 데이터가 없습니다.</div>;
     
-    const { totalLogs, avgScore, highErrorLogs, timeOfDayData, trendData, equipmentData, thresholdAnalysis, pcaData } = analysisData;
+    const { totalLogs, avgScore, highErrorLogs, timeOfDayData, trendData, equipmentData, thresholdAnalysis, pcaDataByEquipment } = analysisData;
+    const shapeMap = { "JDAM": "circle", "정찰 드론 (A형)": "triangle", "전술 데이터링크": "square", "KF-21 비행체": "diamond" };
+    const getColorByScore = (score) => { if (score >= 8) return '#4ade80'; if (score >= 4) return '#facc15'; return '#f87171'; };
 
     return (
         <div className="space-y-6">
@@ -434,27 +428,26 @@ const AnalysisView = ({ logs, profile, allForecastData }) => {
                             <Scatter name="성공" data={thresholdAnalysis.data.filter(d => d.successScore >= 8)} fill="#4ade80" />
                             <Scatter name="보통" data={thresholdAnalysis.data.filter(d => d.successScore >= 4 && d.successScore < 8)} fill="#facc15" />
                             <Scatter name="실패" data={thresholdAnalysis.data.filter(d => d.successScore < 4)} fill="#f87171" />
-                            {thresholdAnalysis.autoThreshold != null && (
-                                <ReferenceLine y={thresholdAnalysis.autoThreshold} stroke="#60a5fa" strokeDasharray="4 4" label={{ value: `자동 임계값 (${thresholdAnalysis.autoThreshold.toFixed(1)}m)`, position: 'insideTopLeft', fill: '#60a5fa' }} />
-                            )}
+                            {thresholdAnalysis.autoThreshold != null && ( <ReferenceLine y={thresholdAnalysis.autoThreshold} stroke="#60a5fa" strokeDasharray="4 4" label={{ value: `자동 임계값 (${thresholdAnalysis.autoThreshold.toFixed(1)}m)`, position: 'insideTopLeft', fill: '#60a5fa' }} /> )}
                         </ScatterChart>
                     </ResponsiveContainer>
                 </div>
-
                 <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
                     <h2 className="text-lg font-semibold text-white mb-4">가상 PCA 작전 요인 분석</h2>
-                     <p className="text-xs text-gray-400 mb-4 -mt-2">작전 성공/보통/실패 그룹이 시각적으로 군집을 이루도록 가상 데이터를 생성하여 표시합니다.</p>
+                     <p className="text-xs text-gray-400 mb-4 -mt-2">작전 성공도에 따라 군집화된 가상 데이터를 표시합니다.</p>
                     <ResponsiveContainer width="100%" height={300}>
-                        {pcaData.length > 0 ? (
+                        {Object.keys(pcaDataByEquipment).length > 0 ? (
                             <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 0 }}>
                                 <CartesianGrid stroke="#4A5568" strokeDasharray="3 3"/>
                                 <XAxis type="number" dataKey="pc1" name="가상 요인 1" stroke="#A0AEC0" tickFormatter={(v) => v.toFixed(1)} />
                                 <YAxis type="number" dataKey="pc2" name="가상 요인 2" stroke="#A0AEC0" tickFormatter={(v) => v.toFixed(1)} />
                                 <Tooltip content={<CustomScatterTooltip />} cursor={{ strokeDasharray: '3 3' }} />
                                 <Legend />
-                                <Scatter name="성공" data={pcaData.filter(d => d.successScore >= 8)} fill="#4ade80" shape="circle" />
-                                <Scatter name="보통" data={pcaData.filter(d => d.successScore >= 4 && d.successScore < 8)} fill="#facc15" shape="triangle" />
-                                <Scatter name="실패" data={pcaData.filter(d => d.successScore < 4)} fill="#f87171" shape="cross" />
+                                {Object.entries(pcaDataByEquipment).map(([eqName, eqData]) => (
+                                    <Scatter key={eqName} name={eqName} data={eqData} shape={shapeMap[eqName] || 'wye'}>
+                                        {eqData.map((entry, index) => ( <Cell key={`cell-${index}`} fill={getColorByScore(entry.successScore)} /> ))}
+                                    </Scatter>
+                                ))}
                             </ScatterChart>
                         ) : <div className="flex items-center justify-center h-full text-gray-500">분석을 위한 데이터가 부족합니다. (로그 3개 이상 필요)</div>}
                     </ResponsiveContainer>
