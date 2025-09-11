@@ -351,6 +351,14 @@ const AnalysisView = ({ logs, profile }) => {
     const [selectedEquipment, setSelectedEquipment] = useState('전체');
     const [pcaSelectedEquipment, setPcaSelectedEquipment] = useState('전체');
 
+    const shapeMap = useMemo(() => {
+        const shapes = ['circle', 'triangle', 'square', 'diamond', 'cross', 'star', 'wye'];
+        return profile.equipment.reduce((acc, eq, index) => {
+            acc[eq.name] = shapes[index % shapes.length];
+            return acc;
+        }, {});
+    }, [profile.equipment]);
+
     const analysisData = useMemo(() => {
         if (logs.length === 0) return null;
 
@@ -376,24 +384,16 @@ const AnalysisView = ({ logs, profile }) => {
             return { name: eq.name, success: eqLogs.filter(l => l.successScore >= 8).length, normal: eqLogs.filter(l => l.successScore >= 4 && l.successScore < 8).length, fail: eqLogs.filter(l => l.successScore < 4).length, count: eqLogs.length };
         }).sort((a,b) => b.count - a.count);
         
-        let logsForThreshold = logs;
-        if (selectedEquipment !== '전체') {
-            logsForThreshold = logs.filter(l => l.equipment === selectedEquipment);
-        }
+        const logsForThreshold = (selectedEquipment === '전체' ? logs : logs.filter(l => l.equipment === selectedEquipment)).filter(l => l.gnssErrorData);
         const thresholdAnalysis = { data: [], autoThreshold: null };
-        const equipmentLogsForThreshold = logsForThreshold.filter(l => l.gnssErrorData);
-        thresholdAnalysis.data = equipmentLogsForThreshold.map(log => ({ successScore: log.successScore, maxError: Math.max(...log.gnssErrorData.map(d => d.error_rate)), equipment: log.equipment, startTime: log.startTime, endTime: log.endTime }));
-        const errRatesOnFailure = equipmentLogsForThreshold.filter(l => l.successScore < 8).flatMap(l => l.gnssErrorData.map(d => d.error_rate));
+        thresholdAnalysis.data = logsForThreshold.map(log => ({ successScore: log.successScore, maxError: Math.max(...log.gnssErrorData.map(d => d.error_rate)), equipment: log.equipment, startTime: log.startTime, endTime: log.endTime }));
+        const errRatesOnFailure = logsForThreshold.filter(l => l.successScore < 8).flatMap(l => l.gnssErrorData.map(d => d.error_rate));
         if (errRatesOnFailure.length >= 3) {
             const p75 = [...errRatesOnFailure].sort((a, b) => a - b)[Math.floor(errRatesOnFailure.length * 0.75)];
             thresholdAnalysis.autoThreshold = p75;
         }
-
-        let logsForPca = logs.filter(l => l.gnssErrorData);
-        if (pcaSelectedEquipment !== '전체') {
-            logsForPca = logsForPca.filter(l => l.equipment === pcaSelectedEquipment);
-        }
         
+        let logsForPca = (pcaSelectedEquipment === '전체' ? logs : logs.filter(l => l.equipment === pcaSelectedEquipment)).filter(l => l.gnssErrorData);
         let pcaData = [];
         if (logsForPca.length > 2) {
             const allErrors = logsForPca.map(l => Math.max(...l.gnssErrorData.map(d => d.error_rate)));
@@ -402,15 +402,12 @@ const AnalysisView = ({ logs, profile }) => {
                 acc[eq.name] = (i - (profile.equipment.length - 1) / 2) * 1.5;
                 return acc;
             }, {});
-
             pcaData = logsForPca.map(log => {
                 const maxError = Math.max(...log.gnssErrorData.map(d => d.error_rate));
                 const base_pc1 = (maxError - avgMaxError) * 0.4;
                 const base_pc2 = equipmentOffsets[log.equipment] || 0;
-                
                 const noise_x = (Math.random() - 0.5) * 3;
                 const noise_y = (Math.random() - 0.5) * 3;
-                
                 return { pc1: base_pc1 + noise_x, pc2: base_pc2 + noise_y, successScore: log.successScore, equipment: log.equipment, maxError: maxError, startTime: log.startTime, endTime: log.endTime };
             });
         }
@@ -423,14 +420,6 @@ const AnalysisView = ({ logs, profile }) => {
 
         return { totalLogs, avgScore: avgScore.toFixed(1), highErrorLogs, timeOfDayData, trendData, equipmentData, thresholdAnalysis, pcaDataByEquipment };
     }, [logs, profile, selectedEquipment, pcaSelectedEquipment]);
-    
-    const shapeMap = useMemo(() => {
-        const shapes = ['circle', 'triangle', 'square', 'diamond', 'cross', 'star', 'wye'];
-        return profile.equipment.reduce((acc, eq, index) => {
-            acc[eq.name] = shapes[index % shapes.length];
-            return acc;
-        }, {});
-    }, [profile.equipment]);
 
     if (!analysisData) return <div className="text-center text-gray-400 p-8">분석할 피드백 데이터가 없습니다.</div>;
     
@@ -603,7 +592,7 @@ const SettingsView = ({ profiles, setProfiles, activeProfile, setActiveProfileId
         </div><div className="mt-8 flex justify-end"><button onClick={handleSave} className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-6 rounded-lg flex items-center space-x-2"><Save className="w-5 h-5" /><span>저장</span></button></div></div>);
 };
 const DeveloperTestView = ({ setLogs, profile, goBack }) => {
-    const generateMockLogs = () => { if (!window.confirm("기존 피드백을 삭제하고, 최근 100일간의 시연용 테스트 데이터를 대량 생성합니까?")) return; const newLogs = []; const today = new Date(); for (let i = 0; i < 100; i++) { const date = new Date(today); date.setDate(today.getDate() - i); const logCount = Math.floor(Math.random() * 5) + 5; for (let j = 0; j < logCount; j++) { const eq = profile.equipment[Math.floor(Math.random() * profile.equipment.length)]; const isBadWeather = Math.random() < 0.15; const baseError = isBadWeather ? (eq.manualThreshold * 1.1 + Math.random() * 5) : (2 + Math.random() * (eq.manualThreshold * 0.8)); let successScore; const errorRatio = baseError / eq.manualThreshold; if (errorRatio > 1.0) { successScore = Math.floor(1 + Math.random() * 3); } else if (errorRatio > 0.7) { successScore = Math.floor(4 + Math.random() * 4); } else { successScore = Math.floor(8 + Math.random() * 3); } const startTime = new Date(date); startTime.setHours(Math.floor(Math.random() * 23), Math.floor(Math.random() * 60)); const endTime = new Date(startTime.getTime() + (30 + Math.floor(Math.random() * 90)) * 60000); const data = []; let curTime = new Date(startTime); const p0 = [profile.location.coords.lat+Math.random()*0.5, profile.location.coords.lon+Math.random()*0.5]; const p1 = [profile.location.coords.lat+Math.random()*0.5, profile.location.coords.lon+Math.random()*0.5]; const p2 = [profile.location.coords.lat+Math.random()*0.5, profile.location.coords.lon+Math.random()*0.5]; let step = 0; while (curTime < endTime) { const err = Math.max(1.0, baseError + (Math.random() - 0.5) * 4); const entry = { date: curTime.toISOString(), error_rate: parseFloat(err.toFixed(2))}; if (eq.usesGeoData) { const progress = step / ((endTime.getTime() - startTime.getTime()) / 60000 || 1); const pos = getPointOnBezierCurve(progress, p0, p1, p2); entry.lat = pos[0]; entry.lon = pos[1]; } data.push(entry); curTime.setMinutes(curTime.getMinutes() + 1); step++; } newLogs.push({ id: Date.now() + i * 100 + j, startTime: startTime.toISOString(), endTime: endTime.toISOString(), equipment: eq.name, successScore, gnssErrorData: data }); } } setLogs(newLogs.sort((a, b) => new Date(b.startTime) - new Date(a.startTime))); alert(`${newLogs.length}개의 테스트 피드백이 생성되었습니다.`); };
+    const generateMockLogs = () => { if (!window.confirm("기존 피드백을 삭제하고, 최근 100일간의 시연용 테스트 데이터를 대량 생성합니까?")) return; const newLogs = []; const today = new Date(); for (let i = 0; i < 100; i++) { const date = new Date(today); date.setDate(today.getDate() - i); const logCount = Math.floor(Math.random() * 5) + 5; for (let j = 0; j < logCount; j++) { const eq = profile.equipment[Math.floor(Math.random() * profile.equipment.length)]; let successScore; let baseError; const outcomeRoll = Math.random(); if (outcomeRoll < 0.85) { successScore = Math.floor(8 + Math.random() * 3); baseError = 2 + Math.random() * (eq.manualThreshold * 0.5); } else if (outcomeRoll < 0.95) { successScore = Math.floor(4 + Math.random() * 4); baseError = eq.manualThreshold * 0.7 + Math.random() * (eq.manualThreshold * 0.3); } else { successScore = Math.floor(1 + Math.random() * 3); baseError = eq.manualThreshold * 1.1 + Math.random() * 5; } const startTime = new Date(date); startTime.setHours(Math.floor(Math.random() * 23), Math.floor(Math.random() * 60)); const endTime = new Date(startTime.getTime() + (30 + Math.floor(Math.random() * 90)) * 60000); const data = []; let curTime = new Date(startTime); const p0 = [profile.location.coords.lat+Math.random()*0.5, profile.location.coords.lon+Math.random()*0.5]; const p1 = [profile.location.coords.lat+Math.random()*0.5, profile.location.coords.lon+Math.random()*0.5]; const p2 = [profile.location.coords.lat+Math.random()*0.5, profile.location.coords.lon+Math.random()*0.5]; let step = 0; while (curTime < endTime) { const err = Math.max(1.0, baseError + (Math.random() - 0.5) * 4); const entry = { date: curTime.toISOString(), error_rate: parseFloat(err.toFixed(2))}; if (eq.usesGeoData) { const progress = step / ((endTime.getTime() - startTime.getTime()) / 60000 || 1); const pos = getPointOnBezierCurve(progress, p0, p1, p2); entry.lat = pos[0]; entry.lon = pos[1]; } data.push(entry); curTime.setMinutes(curTime.getMinutes() + 1); step++; } newLogs.push({ id: Date.now() + i * 100 + j, startTime: startTime.toISOString(), endTime: endTime.toISOString(), equipment: eq.name, successScore, gnssErrorData: data }); } } setLogs(newLogs.sort((a, b) => new Date(b.startTime) - new Date(a.startTime))); alert(`${newLogs.length}개의 테스트 피드백이 생성되었습니다.`); };
     const clearLogs = () => { if (window.confirm("모든 피드백 데이터를 삭제하시겠습니까?")) { setLogs([]); alert("모든 피드백이 삭제되었습니다."); }};
     const resetAppState = () => { if (window.confirm("앱의 모든 로컬 데이터(프로필, 피드백 로그)를 삭제하고 초기 상태로 되돌리시겠습니까?")) { localStorage.clear(); alert("앱 상태가 초기화되었습니다. 페이지를 새로고침합니다."); window.location.reload(); }};
     return (<div className="bg-gray-800 p-6 md:p-8 rounded-xl border border-gray-700 max-w-2xl mx-auto"><div className="flex items-center mb-6"><button onClick={goBack} className="mr-4 p-2 rounded-full hover:bg-gray-700"><ArrowLeft className="w-6 h-6" /></button><h2 className="text-xl md:text-2xl font-bold text-white">개발자 테스트 도구</h2></div><div className="space-y-6"><div><h3 className="text-lg font-semibold text-white mb-3">피드백 데이터 관리</h3><div className="flex space-x-4"><button onClick={generateMockLogs} className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><TestTube2 size={20} /><span>테스트 데이터 생성</span></button><button onClick={clearLogs} className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><Eraser size={20} /><span>모든 데이터 삭제</span></button></div></div><div><h3 className="text-lg font-semibold text-white mb-3 text-red-400">위험 영역</h3><div className="flex space-x-4"><button onClick={resetAppState} className="w-full bg-red-800 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><RefreshCw size={20} /><span>앱 상태 전체 초기화</span></button></div></div></div></div>);
