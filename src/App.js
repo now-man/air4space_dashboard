@@ -350,7 +350,7 @@ const AnalysisView = ({ logs, profile, allForecastData }) => {
             if (features.length > 2) {
                 const dataVectors = features.map(f => f.vector);
                 const standardized = PCA.Utils.standardize(dataVectors);
-                const pca = new PCA(standardized, true);
+                const pca = new PCA(standardized);
                 const projected = pca.predict(standardized, { nComponents: 2 });
                 pcaData = projected.map((p, i) => ({
                     pc1: p[0], pc2: p[1], ...features[i].payload
