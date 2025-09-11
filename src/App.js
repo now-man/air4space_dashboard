@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceArea, BarChart, Bar } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceArea, BarChart, Bar, ScatterChart, Scatter, ZAxis } from 'recharts';
 import { DayPicker } from 'react-day-picker';
 import { ko } from 'date-fns/locale';
 import { Zap, Settings, ShieldAlert, BotMessageSquare, Plus, Trash2, Save, ArrowLeft, UploadCloud, TestTube2, BrainCircuit, Eraser, Lightbulb, RefreshCw, PlayCircle, MapPin, Edit3, Compass, Activity, Calendar as CalendarIcon, MoreVertical, X, Edit, Home, BarChart3, Target, PlusCircle, Pencil } from 'lucide-react';
 import { MapContainer, TileLayer, CircleMarker, Tooltip as LeafletTooltip, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
+import PCA from 'pca-js';
 import 'react-day-picker/dist/style.css';
 
 // --- Helper Functions ---
@@ -110,7 +111,7 @@ export default function App() {
       case 'settings': return <SettingsView profiles={allProfiles} setProfiles={setAllProfiles} activeProfile={activeProfile} setActiveProfileId={setActiveProfileId} logs={missionLogs} goBack={() => setActiveView('dashboard')} createDefaultProfile={createDefaultProfile} />;
       case 'feedback': return <FeedbackView equipmentList={activeProfile.equipment} onSubmit={handleFeedbackSubmit} goBack={() => setActiveView('dashboard')} />;
       case 'dev': return <DeveloperTestView setLogs={setMissionLogs} profile={activeProfile} goBack={() => setActiveView('dashboard')} />;
-      case 'analysis': return <AnalysisView logs={missionLogs} profile={activeProfile} />;
+      case 'analysis': return <AnalysisView logs={missionLogs} profile={activeProfile} allForecastData={allForecastData} />;
       default: return <DashboardView profile={activeProfile} allForecastData={allForecastData} forecastStatus={forecastStatus} logs={missionLogs} deleteLog={deleteLog} todoList={todoList} addTodo={addTodo} updateTodo={updateTodo} deleteTodo={deleteTodo} />;
     }
   };
@@ -131,37 +132,24 @@ const Header = ({ profile, setActiveView, activeView }) => {
     const renderTime = () => {
         const kst = currentTime.toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
         const utc = currentTime.toLocaleTimeString('en-GB', { timeZone: 'UTC', hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
         if (profile.timezone === 'BOTH') {
-            return (
-                <div className="text-right leading-tight">
-                    <div>{kst} <span className="text-gray-400">KST</span></div>
-                    <div>{utc} <span className="text-gray-400">UTC</span></div>
-                </div>
-            );
+            return ( <div className="text-right leading-tight"> <div>{kst} <span className="text-gray-400">KST</span></div> <div>{utc} <span className="text-gray-400">UTC</span></div> </div> );
         }
         return profile.timezone === 'KST' ? `${kst} KST` : `${utc} UTC`;
     };
 
     return (
         <header className="flex items-center justify-between p-4 bg-gray-800 border-b border-gray-700">
-            <div
-                className="flex items-center space-x-3 cursor-pointer hover:opacity-80 transition-opacity"
-                onClick={() => setActiveView('dashboard')}
-            >
+            <button onClick={() => setActiveView('dashboard')} className="flex items-center space-x-3 cursor-pointer hover:opacity-80 transition-opacity">
                 <ShieldAlert className="w-8 h-8 text-cyan-400 flex-shrink-0" />
                 <div><h1 className="text-lg md:text-xl font-bold text-white leading-tight">{profile.name}</h1></div>
-            </div>
-
-            <div className="flex items-center space-x-2">
+            </button>
+            <div className="hidden md:flex items-center space-x-2">
                 <button onClick={() => setActiveView('dashboard')} className={`px-4 py-2 text-sm font-semibold rounded-lg flex items-center gap-2 ${activeView === 'dashboard' ? 'bg-cyan-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}><Home size={16}/> 홈</button>
-                <button onClick={() => setActiveView('analysis')} className={`px-4 py-2 text-sm font-semibold rounded-lg flex items-center gap-2 ${activeView === 'analysis' ? 'bg-cyan-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}><BarChart3 size={16}/> 분석</button>
+                <button onClick={() => setActiveView('analysis')} className={`px-4 py-2 text-sm font-semibold rounded-lg flex items-center gap-2 ${activeView === 'analysis' ? 'bg-cyan-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}><BarChart3 size={16}/> 피드백 및 분석</button>
             </div>
-
-            <div className="flex items-center space-x-4">
-                <div className="hidden md:block text-sm font-semibold text-gray-300 font-mono">
-                    {renderTime()}
-                </div>
+            <div className="flex items-center space-x-2 md:space-x-4">
+                <div className="hidden md:block text-sm font-semibold text-gray-300 font-mono"> {renderTime()} </div>
                 <div className="flex items-center space-x-2">
                     <button onClick={() => setActiveView('feedback')} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold p-2 rounded-lg flex items-center transition-colors" title="피드백 입력"><Plus className="w-5 h-5" /></button>
                     <button onClick={() => setActiveView('settings')} className="bg-gray-700 hover:bg-gray-600 text-white font-semibold p-2 rounded-lg flex items-center transition-colors" title="설정"><Settings className="w-5 h-5" /></button>
@@ -300,78 +288,149 @@ const DashboardView = ({ profile, allForecastData, forecastStatus, logs, deleteL
     </>);
 };
 const StatCard = ({ title, value, icon, color }) => (<div className="bg-gray-800 p-4 rounded-xl flex items-center gap-4 border border-gray-700"><div className={`p-3 rounded-lg bg-${color}-500/20 text-${color}-400`}>{icon}</div><div><p className="text-gray-400 text-sm">{title}</p><p className="text-2xl font-bold text-white">{value}</p></div></div>);
-const AnalysisView = ({ logs, profile }) => {
+
+const CustomScatterTooltip = ({ active, payload }) => {
+    if (active && payload && payload.length) {
+        const data = payload[0].payload;
+        return (
+            <div className="bg-gray-900/80 border border-gray-600 p-3 rounded-lg text-sm text-gray-200 backdrop-blur-sm">
+                <p><strong>장비:</strong> {data.equipment}</p>
+                <p><strong>성공점수:</strong> {data.successScore}점</p>
+                {data.maxError && <p><strong>최대 오차:</strong> {data.maxError.toFixed(2)}m</p>}
+                {data.avg_tec_during_mission && <p><strong>평균 TEC:</strong> {data.avg_tec_during_mission.toFixed(2)}</p>}
+            </div>
+        );
+    }
+    return null;
+};
+
+const AnalysisView = ({ logs, profile, allForecastData }) => {
+    const [selectedEquipment, setSelectedEquipment] = useState(profile.equipment[0]?.name || '');
+
     const analysisData = useMemo(() => {
         if (logs.length === 0) return null;
-        const totalLogs = logs.length;
-        const avgScore = logs.reduce((acc, log) => acc + log.successScore, 0) / totalLogs;
+        
         const equipmentData = profile.equipment.map(eq => {
             const eqLogs = logs.filter(l => l.equipment === eq.name); if (eqLogs.length === 0) return { name: eq.name, success: 0, normal: 0, fail: 0, count: 0 };
             return { name: eq.name, success: eqLogs.filter(l => l.successScore >= 8).length, normal: eqLogs.filter(l => l.successScore >= 4 && l.successScore < 8).length, fail: eqLogs.filter(l => l.successScore < 4).length, count: eqLogs.length };
         }).sort((a,b) => b.count - a.count);
-        const highErrorLogs = logs.filter(l => l.gnssErrorData && l.gnssErrorData[0]?.lat && Math.max(...l.gnssErrorData.map(d=>d.error_rate)) > profile.unitManualThreshold);
-        const timeOfDayData = [{ n: '새벽 (00-06)', s: 0, f: 0 }, { n: '오전 (06-12)', s: 0, f: 0 }, { n: '오후 (12-18)', s: 0, f: 0 }, { n: '야간 (18-24)', s: 0, f: 0 }];
-        logs.forEach(log => { const h = new Date(log.startTime).getHours(); const p = timeOfDayData[Math.floor(h / 6)]; log.successScore >= 8 ? p.s++ : p.f++; });
-        const weeklyTrends = {};
-        logs.forEach(log => { const d = new Date(log.startTime); const weekStart = new Date(d.setDate(d.getDate() - (d.getDay() || 7) + 1)).toISOString().slice(0, 10); if (!weeklyTrends[weekStart]) { weeklyTrends[weekStart] = { totalScore: 0, count: 0, name: weekStart }; } weeklyTrends[weekStart].totalScore += log.successScore; weeklyTrends[weekStart].count++; });
-        const trendData = Object.values(weeklyTrends).map(w => ({ ...w, avgScore: parseFloat((w.totalScore / w.count).toFixed(1)) })).sort((a, b) => new Date(a.name) - new Date(b.name));
-        return { totalLogs, avgScore: avgScore.toFixed(1), equipmentData, highErrorLogs, timeOfDayData, trendData };
-    }, [logs, profile]);
 
-    if (!analysisData) return <div className="text-center text-gray-400 p-8">분석할 피드백 데이터가 없습니다. [설정 > 개발자 테스트] 에서 데이터를 생성할 수 있습니다.</div>;
-    const { totalLogs, avgScore, equipmentData, highErrorLogs, timeOfDayData, trendData } = analysisData;
+        const thresholdAnalysis = { data: [], autoThreshold: null };
+        if (selectedEquipment) {
+            const equipmentLogs = logs.filter(l => l.equipment === selectedEquipment && l.gnssErrorData);
+            thresholdAnalysis.data = equipmentLogs.map(log => ({
+                successScore: log.successScore,
+                maxError: Math.max(...log.gnssErrorData.map(d => d.error_rate)),
+                equipment: log.equipment
+            }));
+            const- errRatesOnFailure = equipmentLogs.filter(l => l.successScore < 8).flatMap(l => l.gnssErrorData.map(d => d.error_rate));
+            if (errRatesOnFailure.length >= 3) {
+                const p75 = [...errRatesOnFailure].sort((a, b) => a - b)[Math.floor(errRatesOnFailure.length * 0.75)];
+                thresholdAnalysis.autoThreshold = p75;
+            }
+        }
+        
+        // PCA Data Preparation
+        let pcaData = [];
+        if (allForecastData.length > 0 && logs.length > 5) {
+            const features = logs.map(log => {
+                const start = new Date(log.startTime).getTime(); const end = new Date(log.endTime).getTime();
+                const relevantForecast = allForecastData.filter(d => d.timestamp >= start && d.timestamp <= end);
+                if (!relevantForecast.length || !log.gnssErrorData) return null;
+                const avg_tec = relevantForecast.reduce((sum, d) => sum + d.tec, 0) / relevantForecast.length;
+                const avg_predicted_error = relevantForecast.reduce((sum, d) => sum + d.predicted_error, 0) / relevantForecast.length;
+                const max_actual_error = Math.max(...log.gnssErrorData.map(d => d.error_rate));
+                const hour = new Date(log.startTime).getHours();
+                return {
+                    vector: [avg_tec, avg_predicted_error, max_actual_error, hour],
+                    payload: { successScore: log.successScore, equipment: log.equipment, avg_tec_during_mission: avg_tec, maxError: max_actual_error }
+                };
+            }).filter(Boolean);
+
+            if (features.length > 2) {
+                const dataVectors = features.map(f => f.vector);
+                const standardized = PCA.Utils.standardize(dataVectors);
+                const pca = new PCA(standardized, true);
+                const projected = pca.predict(standardized, { nComponents: 2 });
+                pcaData = projected.map((p, i) => ({
+                    pc1: p[0], pc2: p[1], ...features[i].payload
+                }));
+            }
+        }
+
+        return { equipmentData, thresholdAnalysis, pcaData };
+    }, [logs, profile, selectedEquipment, allForecastData]);
+
+    if (!analysisData) return <div className="text-center text-gray-400 p-8">분석할 피드백 데이터가 없습니다.</div>;
 
     return (
         <div className="space-y-6">
-            <h1 className="text-2xl font-bold text-white">피드백 종합 분석</h1>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <StatCard title="총 피드백 수" value={`${totalLogs} 건`} icon={<BarChart3 size={24}/>} color="cyan" />
-                <StatCard title="평균 작전 성공 점수" value={`${avgScore} 점`} icon={<Target size={24}/>} color="green" />
-                <StatCard title="임계값 초과 작전 수" value={`${highErrorLogs.length} 건`} icon={<ShieldAlert size={24}/>} color="red" />
-            </div>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                 <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
-                    <h2 className="text-lg font-semibold text-white mb-4">시간대별 작전 성공률</h2>
-                    <ResponsiveContainer width="100%" height={300}><BarChart data={timeOfDayData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" stroke="#4A5568" /><XAxis dataKey="n" stroke="#A0AEC0" tick={{fontSize: 12}} /><YAxis stroke="#A0AEC0" /><Tooltip contentStyle={{ backgroundColor: '#1A202C' }} /><Legend /><Bar dataKey="s" stackId="a" fill="#4ade80" name="성공" /><Bar dataKey="f" stackId="a" fill="#f87171" name="실패/보통" /></BarChart></ResponsiveContainer>
+             <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-6">
+                <div className="bg-gray-800 p-6 rounded-xl border border-gray-700 lg:col-span-2">
+                    <div className="flex justify-between items-center mb-4">
+                        <h2 className="text-lg font-semibold text-white">장비별 임계값 분석</h2>
+                        <select value={selectedEquipment} onChange={e => setSelectedEquipment(e.target.value)} className="bg-gray-900 border-gray-600 rounded-md px-3 py-1 text-sm">
+                            {profile.equipment.map(eq => <option key={eq.id} value={eq.name}>{eq.name}</option>)}
+                        </select>
+                    </div>
+                    <ResponsiveContainer width="100%" height={300}>
+                        <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 0 }}>
+                            <CartesianGrid stroke="#4A5568" strokeDasharray="3 3"/>
+                            <XAxis type="number" dataKey="successScore" name="성공 점수" unit="점" stroke="#A0AEC0" domain={[0, 10]}/>
+                            <YAxis type="number" dataKey="maxError" name="최대 오차" unit="m" stroke="#A0AEC0" />
+                            <ZAxis type="category" dataKey="equipment" />
+                            <Tooltip content={<CustomScatterTooltip />} cursor={{ strokeDasharray: '3 3' }} />
+                            <Legend />
+                            <Scatter name="성공 작전" data={analysisData.thresholdAnalysis.data.filter(d => d.successScore >= 8)} fill="#4ade80" />
+                            <Scatter name="보통/실패 작전" data={analysisData.thresholdAnalysis.data.filter(d => d.successScore < 8)} fill="#f87171" />
+                            {analysisData.thresholdAnalysis.autoThreshold && (
+                                <ReferenceLine y={analysisData.thresholdAnalysis.autoThreshold} stroke="#facc15" strokeDasharray="4 4" label={{ value: `자동 임계값 (${analysisData.thresholdAnalysis.autoThreshold.toFixed(1)}m)`, position: 'insideTopLeft', fill: '#facc15' }} />
+                            )}
+                        </ScatterChart>
+                    </ResponsiveContainer>
                 </div>
-                 <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
-                    <h2 className="text-lg font-semibold text-white mb-4">주간 성공률 추이</h2>
-                    <ResponsiveContainer width="100%" height={300}><LineChart data={trendData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" stroke="#4A5568" /><XAxis dataKey="name" stroke="#A0AEC0" tick={{fontSize: 10}} /><YAxis stroke="#A0AEC0" domain={[0, 10]}/><Tooltip contentStyle={{ backgroundColor: '#1A202C' }} /><Legend /><Line type="monotone" dataKey="avgScore" name="주간 평균 점수" stroke="#8884d8" /></LineChart></ResponsiveContainer>
-                </div>
-                <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
-                    <h2 className="text-lg font-semibold text-white mb-4">장비별 작전 수행 현황</h2>
-                    <ResponsiveContainer width="100%" height={300}><BarChart data={equipmentData} layout="vertical" margin={{ top: 5, right: 20, left: 10, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" stroke="#4A5568" /><XAxis type="number" stroke="#A0AEC0" /><YAxis type="category" dataKey="name" stroke="#A0AEC0" width={100} tick={{fontSize: 12}} /><Tooltip contentStyle={{ backgroundColor: '#1A202C' }} /><Legend /><Bar dataKey="success" stackId="a" fill="#4ade80" name="성공" /><Bar dataKey="normal" stackId="a" fill="#facc15" name="보통" /><Bar dataKey="fail" stackId="a" fill="#f87171" name="실패" /></BarChart></ResponsiveContainer>
-                </div>
-                <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
-                     <h2 className="text-lg font-semibold text-white mb-4">GNSS 오차 다발 지역</h2>
-                     <MapContainer key={profile.location.coords.lat + "-" + profile.location.coords.lon} center={[profile.location.coords.lat, profile.location.coords.lon]} zoom={8} style={{ height: "300px", width: "100%", borderRadius: "0.75rem" }}>
-                        <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; CARTO' />
-                        {highErrorLogs.map(log => { const pos = log.gnssErrorData[0]; const maxError = Math.max(...log.gnssErrorData.map(d => d.error_rate)); return <CircleMarker key={log.id} center={[pos.lat, pos.lon]} radius={6} pathOptions={{ color: '#f87171', fillColor: '#f87171', fillOpacity: 0.7 }}><LeafletTooltip>장비: {log.equipment}<br/>최대 오차: {maxError.toFixed(1)}m</LeafletTooltip></CircleMarker> })}
-                     </MapContainer>
+
+                <div className="bg-gray-800 p-6 rounded-xl border border-gray-700 lg:col-span-2">
+                    <h2 className="text-lg font-semibold text-white mb-4">PCA 기반 작전 요인 분석</h2>
+                    <ResponsiveContainer width="100%" height={300}>
+                        {analysisData.pcaData.length > 0 ? (
+                            <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 0 }}>
+                                <CartesianGrid stroke="#4A5568" strokeDasharray="3 3"/>
+                                <XAxis type="number" dataKey="pc1" name="주성분 1" stroke="#A0AEC0" tickFormatter={(v) => v.toFixed(1)} />
+                                <YAxis type="number" dataKey="pc2" name="주성분 2" stroke="#A0AEC0" tickFormatter={(v) => v.toFixed(1)} />
+                                <Tooltip content={<CustomScatterTooltip />} cursor={{ strokeDasharray: '3 3' }} />
+                                <Scatter name="성공 작전" data={analysisData.pcaData.filter(d => d.successScore >= 8)} fill="#4ade80" shape="circle" />
+                                <Scatter name="보통/실패 작전" data={analysisData.pcaData.filter(d => d.successScore < 8)} fill="#f87171" shape="cross" />
+                            </ScatterChart>
+                        ) : <div className="flex items-center justify-center h-full text-gray-500">PCA 분석을 위한 데이터가 부족합니다. (최소 5회 이상)</div>}
+                    </ResponsiveContainer>
                 </div>
             </div>
         </div>
     );
 };
-const SettingsView = ({ profiles, setProfiles, activeProfile, setActiveProfileId, logs, goBack, createDefaultProfile }) => {
+
+// --- Settings View ---
+const SettingsView = ({ profiles, setProfiles, activeProfile, setActiveProfileId, goBack, createDefaultProfile }) => {
     const [localProfile, setLocalProfile] = useState(JSON.parse(JSON.stringify(activeProfile)));
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingProfile, setEditingProfile] = useState(null);
 
     useEffect(() => { setLocalProfile(JSON.parse(JSON.stringify(activeProfile))); }, [activeProfile]);
 
-    const handleProfileChange = (field, value) => {
-        setLocalProfile(prev => ({ ...prev, [field]: value }));
-    };
-    
+    const handleProfileChange = (field, value) => { setLocalProfile(prev => ({ ...prev, [field]: value })); };
     const handleLocationChange = (field, value) => setLocalProfile(p => ({ ...p, location: { ...p.location, coords: { ...p.location.coords, [field]: parseFloat(value) || null }}}));
     const handleEquipmentChange = (id, field, value) => setLocalProfile({ ...localProfile, equipment: localProfile.equipment.map(eq => eq.id === id ? { ...eq, [field]: value } : eq) });
     const addEquipment = () => setLocalProfile({ ...localProfile, equipment: [...localProfile.equipment, { id: Date.now(), name: "신규 장비", thresholdMode: 'manual', manualThreshold: 10.0, autoThreshold: null, usesGeoData: false }] });
     const removeEquipment = (id) => setLocalProfile({ ...localProfile, equipment: localProfile.equipment.filter(eq => eq.id !== id) });
-    const handleSave = () => { setProfiles(profiles.map(p => p.id === localProfile.id ? localProfile : p)); goBack(); };
+    
+    const handleSave = () => { 
+        setProfiles(profiles.map(p => p.id === localProfile.id ? localProfile : p)); 
+        goBack(); 
+    };
 
     const handleLocationMethodChange = (method) => {
-        const updatedProfile = { ...localProfile, location: { ...localProfile.location, method } };
+        let updatedProfile = { ...localProfile, location: { ...localProfile.location, method } };
         if (method === 'unit') {
             updatedProfile.location.coords = localProfile.location.initialCoords;
             setLocalProfile(updatedProfile);
@@ -392,7 +451,6 @@ const SettingsView = ({ profiles, setProfiles, activeProfile, setActiveProfileId
         }
     };
     
-    const runAutoTuneForAll = () => { /* ... no changes ... */ };
     const openProfileModal = (profile) => { setEditingProfile(profile ? {...profile} : { name: '', location: { coords: { lat: '', lon: ''}}}); setIsModalOpen(true); };
     const handleSaveProfile = () => {
         if (!editingProfile.name) { alert("부대명을 입력해주세요."); return; }
@@ -420,12 +478,13 @@ const SettingsView = ({ profiles, setProfiles, activeProfile, setActiveProfileId
         <div className="flex items-center mb-6"><button onClick={goBack} className="mr-4 p-2 rounded-full hover:bg-gray-700"><ArrowLeft className="w-6 h-6" /></button><h2 className="text-xl md:text-2xl font-bold text-white">부대 프로필 설정</h2></div>
         <div className="space-y-6">
             <div><label className="block text-sm font-medium text-gray-400 mb-2">현재 프로필</label><div className="flex items-center gap-2"><select className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white" value={activeProfile.id} onChange={e => setActiveProfileId(Number(e.target.value))}>{profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select><button onClick={() => openProfileModal()} className="p-2 bg-green-600 rounded-lg" title="새 부대 추가"><PlusCircle size={20} /></button><button onClick={() => openProfileModal(activeProfile)} className="p-2 bg-yellow-600 rounded-lg" title="현 부대 수정"><Pencil size={20} /></button><button onClick={() => handleDeleteProfile(activeProfile.id)} className="p-2 bg-red-600 rounded-lg" title="현 부대 삭제"><Trash2 size={20} /></button></div></div>
-            <div className="bg-gray-700/50 p-4 rounded-lg space-y-3"><h3 className="text-lg font-semibold text-white">위치 및 시간 설정</h3><div className="form-group"><label className="block text-sm font-medium text-gray-400 mb-2">위치 설정 방식</label><div className="flex items-center space-x-2">{[{id:'unit',label:'부대 위치',icon:Compass},{id:'manual',label:'직접 입력',icon:Edit3},{id:'current',label:'현재 위치',icon:MapPin}].map(m=>(<button key={m.id} onClick={()=>handleLocationMethodChange(m.id)} className={`flex items-center space-x-2 px-3 py-2 text-sm rounded-md ${localProfile.location.method === m.id ? 'bg-blue-600 text-white':'bg-gray-600'}`}>{React.createElement(m.icon,{size:16})}<span>{m.label}</span></button>))}</div></div>{localProfile.location.method === 'manual' && (<div className="flex gap-4"><div className="w-1/2"><label className="block text-sm font-medium text-gray-400 mb-2">위도</label><input type="number" step="any" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white" value={localProfile.location.coords.lat || ''} onChange={e => handleLocationChange('lat', e.target.value)}/></div><div className="w-1/2"><label className="block text-sm font-medium text-gray-400 mb-2">경도</label><input type="number" step="any" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white" value={localProfile.location.coords.lon || ''} onChange={e => handleLocationChange('lon', e.target.value)}/></div></div>)}
+            <div className="bg-gray-700/50 p-4 rounded-lg space-y-3"><h3 className="text-lg font-semibold text-white">위치 및 시간 설정</h3><div className="form-group"><label className="block text-sm font-medium text-gray-400 mb-2">위치 설정 방식</label><div className="flex flex-wrap gap-2">{[{id:'unit',label:'부대 위치',icon:Compass},{id:'manual',label:'직접 입력',icon:Edit3},{id:'current',label:'현재 위치',icon:MapPin}].map(m=>(<button key={m.id} onClick={()=>handleLocationMethodChange(m.id)} className={`flex items-center space-x-2 px-3 py-2 text-sm rounded-md ${localProfile.location.method === m.id ? 'bg-blue-600 text-white':'bg-gray-600'}`}>{React.createElement(m.icon,{size:16})}<span>{m.label}</span></button>))}</div></div>{localProfile.location.method === 'manual' && (<div className="flex flex-col md:flex-row gap-4 mt-2"><div className="w-full md:w-1/2"><label className="block text-sm font-medium text-gray-400 mb-2">위도</label><input type="number" step="any" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white" value={localProfile.location.coords.lat || ''} onChange={e => handleLocationChange('lat', e.target.value)}/></div><div className="w-full md:w-1/2"><label className="block text-sm font-medium text-gray-400 mb-2">경도</label><input type="number" step="any" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white" value={localProfile.location.coords.lon || ''} onChange={e => handleLocationChange('lon', e.target.value)}/></div></div>)}
             <div className="form-group"><label className="block text-sm font-medium text-gray-400 mb-2">표준 시간</label><div className="flex items-center space-x-2">{[{id:'KST',label:'KST'},{id:'UTC',label:'UTC'},{id:'BOTH',label:'KST/UTC'}].map(t=>(<button key={t.id} onClick={()=>handleProfileChange('timezone', t.id)} className={`px-3 py-2 text-sm rounded-md ${localProfile.timezone===t.id ? 'bg-blue-600 text-white':'bg-gray-600'}`}>{t.label}</button>))}</div></div></div>
             <div className="bg-gray-700/50 p-4 rounded-lg"><h3 className="text-lg font-semibold text-white mb-3">부대 종합 임계값</h3><div className="flex items-center space-x-2 cursor-pointer"><span className={`px-2 py-1 text-xs rounded-md ${localProfile.unitThresholdMode === 'manual' ? 'bg-blue-600':'bg-gray-600'}`} onClick={() => handleProfileChange('unitThresholdMode', 'manual')}>수동</span><span className={`px-2 py-1 text-xs rounded-md ${localProfile.unitThresholdMode === 'auto' ? 'bg-blue-600':'bg-gray-600'}`} onClick={() => handleProfileChange('unitThresholdMode', 'auto')}>자동</span></div>{localProfile.unitThresholdMode === 'manual' ? (<div className="flex items-center space-x-2 mt-2"><input type="range" min="1" max="30" step="0.5" value={localProfile.unitManualThreshold} onChange={e => handleProfileChange('unitManualThreshold', parseFloat(e.target.value))} className="w-full" /><span className="text-cyan-400 font-mono w-16 text-center">{localProfile.unitManualThreshold.toFixed(1)}m</span></div>) : (<div className="text-center bg-gray-800 p-2 rounded-md mt-2"><span className="text-gray-400">자동 계산된 임계값: </span><span className="font-bold text-white">{localProfile.unitAutoThreshold ? `${localProfile.unitAutoThreshold.toFixed(2)}m` : 'N/A'}</span></div>)}</div>
-            <div><h3 className="text-lg font-semibold text-white mb-3">주요 장비 설정</h3><div className="space-y-4">{localProfile.equipment.map(eq => (<div key={eq.id} className="bg-gray-700/50 p-4 rounded-lg space-y-4"><div className="flex justify-between items-center"><input type="text" value={eq.name} onChange={e => handleEquipmentChange(eq.id, 'name', e.target.value)} className="bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white" placeholder="장비명" /><button onClick={() => removeEquipment(eq.id)} className="text-red-400 hover:text-red-300 p-2"><Trash2 className="w-5 h-5" /></button></div><div className="flex items-center justify-between"><label className="flex items-center space-x-2 cursor-pointer"><input type="checkbox" checked={eq.usesGeoData} onChange={e => handleEquipmentChange(eq.id, 'usesGeoData', e.target.checked)} className="h-4 w-4 rounded bg-gray-900 border-gray-600 text-cyan-500 focus:ring-cyan-500" /><span>위치 정보 사용</span></label><div className="flex items-center space-x-2 cursor-pointer"><span className={`px-2 py-1 text-xs rounded-md ${eq.thresholdMode === 'manual' ? 'bg-blue-600':'bg-gray-600'}`} onClick={() => handleEquipmentChange(eq.id, 'thresholdMode', 'manual')}>수동</span><span className={`px-2 py-1 text-xs rounded-md ${eq.thresholdMode === 'auto' ? 'bg-blue-600':'bg-gray-600'}`} onClick={() => handleEquipmentChange(eq.id, 'thresholdMode', 'auto')}>자동</span></div></div><div>{eq.thresholdMode === 'manual' ? (<div className="flex items-center space-x-2"><input type="range" min="1" max="30" step="0.5" value={eq.manualThreshold} onChange={e => handleEquipmentChange(eq.id, 'manualThreshold', parseFloat(e.target.value))} className="w-full" /><span className="text-cyan-400 font-mono w-16 text-center">{eq.manualThreshold.toFixed(1)}m</span></div>) : (<div className="text-center bg-gray-800 p-2 rounded-md"><span className="text-gray-400">자동 임계값: </span><span className="font-bold text-white">{eq.autoThreshold ? `${eq.autoThreshold.toFixed(2)}m` : '데이터 부족'}</span></div>)}</div></div>))}</div><div className="flex space-x-4 mt-4"><button onClick={addEquipment} className="w-full bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><Plus className="w-5 h-5" /><span>장비 추가</span></button><button onClick={runAutoTuneForAll} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><BrainCircuit size={20}/><span>자동 임계값 전체 재계산</span></button></div></div>
+            <div><h3 className="text-lg font-semibold text-white mb-3">주요 장비 설정</h3><div className="space-y-4">{localProfile.equipment.map(eq => (<div key={eq.id} className="bg-gray-700/50 p-4 rounded-lg space-y-4"><div className="flex justify-between items-center"><input type="text" value={eq.name} onChange={e => handleEquipmentChange(eq.id, 'name', e.target.value)} className="bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white" placeholder="장비명" /><button onClick={() => removeEquipment(eq.id)} className="text-red-400 hover:text-red-300 p-2"><Trash2 className="w-5 h-5" /></button></div><div className="flex items-center justify-between"><label className="flex items-center space-x-2 cursor-pointer"><input type="checkbox" checked={eq.usesGeoData} onChange={e => handleEquipmentChange(eq.id, 'usesGeoData', e.target.checked)} className="h-4 w-4 rounded bg-gray-900 border-gray-600 text-cyan-500 focus:ring-cyan-500" /><span>위치 정보 사용</span></label><div className="flex items-center space-x-2 cursor-pointer"><span className={`px-2 py-1 text-xs rounded-md ${eq.thresholdMode === 'manual' ? 'bg-blue-600':'bg-gray-600'}`} onClick={() => handleEquipmentChange(eq.id, 'thresholdMode', 'manual')}>수동</span><span className={`px-2 py-1 text-xs rounded-md ${eq.thresholdMode === 'auto' ? 'bg-blue-600':'bg-gray-600'}`} onClick={() => handleEquipmentChange(eq.id, 'thresholdMode', 'auto')}>자동</span></div></div><div>{eq.thresholdMode === 'manual' ? (<div className="flex items-center space-x-2"><input type="range" min="1" max="30" step="0.5" value={eq.manualThreshold} onChange={e => handleEquipmentChange(eq.id, 'manualThreshold', parseFloat(e.target.value))} className="w-full" /><span className="text-cyan-400 font-mono w-16 text-center">{eq.manualThreshold.toFixed(1)}m</span></div>) : (<div className="text-center bg-gray-800 p-2 rounded-md"><span className="text-gray-400">자동 임계값: </span><span className="font-bold text-white">{eq.autoThreshold ? `${eq.autoThreshold.toFixed(2)}m` : '데이터 부족'}</span></div>)}</div></div>))}</div><div className="flex space-x-4 mt-4"><button onClick={addEquipment} className="w-full bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><Plus className="w-5 h-5" /><span>장비 추가</span></button><button className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><BrainCircuit size={20}/><span>자동 임계값 전체 재계산</span></button></div></div>
         </div><div className="mt-8 flex justify-end"><button onClick={handleSave} className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-6 rounded-lg flex items-center space-x-2"><Save className="w-5 h-5" /><span>저장</span></button></div></div>);
 };
+
 const DeveloperTestView = ({ setLogs, profile, goBack }) => {
     const generateMockLogs = () => { if (!window.confirm("기존 피드백을 삭제하고, 90일간의 테스트 데이터를 대량 생성합니까?")) return; const newLogs = []; const today = new Date(); for (let i = 0; i < 90; i++) { const date = new Date(today); date.setDate(today.getDate() - i); const logCount = Math.floor(Math.random() * 4) + 5; for (let j = 0; j < logCount; j++) { const eq = profile.equipment[Math.floor(Math.random() * profile.equipment.length)]; const isBadWeather = Math.random() < 0.15; const baseError = isBadWeather ? (eq.manualThreshold * 0.7 + Math.random() * 5) : (2 + Math.random() * 3); const successScore = baseError > eq.manualThreshold * 0.9 ? Math.floor(1 + Math.random() * 5) : (baseError > eq.manualThreshold * 0.6 ? Math.floor(6 + Math.random() * 3) : Math.floor(8 + Math.random() * 3)); const startTime = new Date(date); startTime.setHours(Math.floor(Math.random() * 23), Math.floor(Math.random() * 60)); const endTime = new Date(startTime.getTime() + (30 + Math.floor(Math.random() * 90)) * 60000); const data = []; let curTime = new Date(startTime); const p0 = [36.5+Math.random()*0.5, 127.2+Math.random()*0.5]; const p1 = [36.5+Math.random()*0.5, 127.2+Math.random()*0.5]; const p2 = Math.random() < 0.5 ? p0 : [36.5+Math.random()*0.5, 127.2+Math.random()*0.5]; let step = 0; while (curTime <= endTime) { const err = Math.max(1.0, baseError + (Math.random() - 0.5) * 4); const entry = { date: curTime.toISOString(), error_rate: parseFloat(err.toFixed(2))}; if (eq.usesGeoData) { const progress = step / ((endTime - startTime) / 60000); const pos = getPointOnBezierCurve(progress, p0, p1, p2); entry.lat = pos[0]; entry.lon = pos[1]; } data.push(entry); curTime.setMinutes(curTime.getMinutes() + 1); step++; } newLogs.push({ id: Date.now() + i * 100 + j, startTime: startTime.toISOString(), endTime: endTime.toISOString(), equipment: eq.name, successScore, gnssErrorData: data }); } } setLogs(newLogs.sort((a, b) => new Date(b.startTime) - new Date(a.startTime))); alert(`${newLogs.length}개의 테스트 피드백이 생성되었습니다.`); };
     const clearLogs = () => { if (window.confirm("모든 피드백 데이터를 삭제하시겠습니까?")) { setLogs([]); alert("모든 피드백이 삭제되었습니다."); }};
