@@ -5,28 +5,44 @@ import { ko } from 'date-fns/locale';
 import { Zap, Settings, ShieldAlert, BotMessageSquare, Plus, Trash2, Save, ArrowLeft, UploadCloud, TestTube2, BrainCircuit, Eraser, Lightbulb, RefreshCw, PlayCircle, MapPin, Edit3, Compass, Activity, Calendar as CalendarIcon, MoreVertical, X, Edit, Home, BarChart3, Target, PlusCircle, Pencil } from 'lucide-react';
 import { MapContainer, TileLayer, CircleMarker, Tooltip as LeafletTooltip, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import * as PCAmod from 'pca-js';
 import 'react-day-picker/dist/style.css';
 
 // --- Helper Functions ---
 const getErrorColor = (error, threshold = 10.0) => { if (error > threshold) return '#f87171'; if (error > threshold * 0.7) return '#facc15'; return '#4ade80'; };
 const getSuccessScoreInfo = (score) => { if (score >= 8) return { label: "성공", color: "text-green-400", dotClass: "bg-green-500" }; if (score >= 4 && score < 8) return { label: "보통", color: "text-yellow-400", dotClass: "bg-yellow-500" }; return { label: "실패", color: "text-red-400", dotClass: "bg-red-500" }; };
-const formatDate = (dateString, format = 'full') => { if (!dateString) return 'N/A'; const date = new Date(dateString); const options = { full: { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }, time: { hour: '2-digit', minute: '2-digit', hour12: false }, date: { year: 'numeric', month: 'long', day: 'numeric' }}; return date.toLocaleString('ko-KR', options[format]); };
+const formatDate = (dateString, format = 'full') => { if (!dateString) return 'N/A'; const date = new Date(dateString); const options = { full: { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }, time: { hour: '2-digit', minute: '2-digit', hour12: false }, date: { month: '2-digit', day: '2-digit' }}; return new Intl.DateTimeFormat('ko-KR', options[format]).format(date); };
 const toLocalISOString = (date) => new Date(date.getTime() - (date.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
 const getPointOnBezierCurve = (t, p0, p1, p2) => { const [x0, y0] = p0; const [x1, y1] = p1; const [x2, y2] = p2; const u = 1 - t; const tt = t * t; const uu = u * u; const x = uu * x0 + 2 * u * t * x1 + tt * x2; const y = uu * y0 + 2 * u * t * y1 + tt * y2; return [x, y]; };
 const formatDateKey = (d) => { if(!d) return null; d = new Date(d); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
-const parseCSV = (csvText) => {
-    const lines = csvText.trim().split('\n').filter(line => line);
-    if (lines.length < 1) return [];
-    const headers = ["time", "gnss_error", "tec"];
-    return lines.map(line => {
-        const values = line.split(',').map(v => v.trim());
-        return headers.reduce((obj, header, index) => {
-            obj[header] = values[index];
-            return obj;
-        }, {});
-    });
+const generateNiceTicks = (startTime, endTime) => {
+    const duration = endTime - startTime;
+    const ticks = [];
+    let interval, startPoint;
+
+    if (duration <= 2 * 24 * 3600 * 1000) { // Less than 2 days -> hourly ticks
+        interval = 6 * 3600 * 1000; // 6 hours
+        startPoint = new Date(startTime);
+        startPoint.setMinutes(0, 0, 0);
+        startPoint.setHours(startPoint.getHours() + 1);
+    } else if (duration <= 10 * 24 * 3600 * 1000) { // Less than 10 days -> daily ticks
+        interval = 24 * 3600 * 1000; // 1 day
+        startPoint = new Date(startTime);
+        startPoint.setHours(0, 0, 0, 0);
+    } else { // More than 10 days -> 5-day ticks
+        interval = 5 * 24 * 3600 * 1000; // 5 days
+        startPoint = new Date(startTime);
+        startPoint.setHours(0, 0, 0, 0);
+    }
+    
+    let currentTick = startPoint.getTime();
+    while (currentTick < endTime) {
+        if (currentTick > startTime) {
+            ticks.push(currentTick);
+        }
+        currentTick += interval;
+    }
+    return ticks;
 };
 
 // --- Main App Component ---
@@ -82,8 +98,16 @@ export default function App() {
       fetch(FETCH_URL)
           .then(response => { if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`); return response.text(); })
           .then(csvText => {
-              const parsedData = parseCSV(csvText);
-              if (parsedData.length === 0) throw new Error('CSV data is empty or invalid.');
+              const lines = csvText.trim().split('\n').filter(line => line);
+              if (lines.length < 1) return [];
+              const headers = ["time", "gnss_error", "tec"];
+              const parsedData = lines.map(line => {
+                  const values = line.split(',').map(v => v.trim());
+                  return headers.reduce((obj, header, index) => {
+                      obj[header] = values[index];
+                      return obj;
+                  }, {});
+              });
               const formattedData = parsedData.map(d => ({ timestamp: new Date(d.time).getTime(), predicted_error: parseFloat(d.gnss_error) || 0, tec: parseFloat(d.tec) || 0 })) .filter(d => !isNaN(d.timestamp)).sort((a, b) => a.timestamp - b.timestamp);
               setAllForecastData(formattedData);
               setForecastStatus({ isLoading: false, error: null });
@@ -111,7 +135,7 @@ export default function App() {
       case 'settings': return <SettingsView profiles={allProfiles} setProfiles={setAllProfiles} activeProfile={activeProfile} setActiveProfileId={setActiveProfileId} logs={missionLogs} goBack={() => setActiveView('dashboard')} createDefaultProfile={createDefaultProfile} />;
       case 'feedback': return <FeedbackView equipmentList={activeProfile.equipment} onSubmit={handleFeedbackSubmit} goBack={() => setActiveView('dashboard')} />;
       case 'dev': return <DeveloperTestView setLogs={setMissionLogs} profile={activeProfile} goBack={() => setActiveView('dashboard')} />;
-      case 'analysis': return <AnalysisView logs={missionLogs} profile={activeProfile} allForecastData={allForecastData} />;
+      case 'analysis': return <AnalysisView logs={missionLogs} profile={activeProfile} />;
       default: return <DashboardView profile={activeProfile} allForecastData={allForecastData} forecastStatus={forecastStatus} logs={missionLogs} deleteLog={deleteLog} todoList={todoList} addTodo={addTodo} updateTodo={updateTodo} deleteTodo={deleteTodo} />;
     }
   };
@@ -177,12 +201,22 @@ const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold })
     }, [allForecastData]);
 
     const displayData = useMemo(() => {
-        if (!allForecastData || allForecastData.length === 0 || !timeRange.start) return [];
+        if (!allForecastData || !timeRange.start) return [];
         return allForecastData.filter(d => d.timestamp >= timeRange.start && d.timestamp <= timeRange.end);
     }, [allForecastData, timeRange]);
 
     const nowTimestamp = new Date().getTime();
     const isNowInRange = nowTimestamp >= (timeRange.start || 0) && nowTimestamp <= (timeRange.end || Infinity);
+    
+    const niceTicks = useMemo(() => {
+        if (!timeRange.start) return [];
+        return generateNiceTicks(timeRange.start, timeRange.end);
+    }, [timeRange]);
+    
+    const formatXAxis = (tick) => {
+        const duration = timeRange.end - timeRange.start;
+        return duration <= 2 * 24 * 3600 * 1000 ? formatDate(tick, 'time') : formatDate(tick, 'date');
+    };
 
     return (
         <div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700">
@@ -194,7 +228,7 @@ const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold })
                  : (<ResponsiveContainer width="100%" height="100%">
                      <LineChart data={displayData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" />
-                        <XAxis dataKey="timestamp" stroke="#A0AEC0" type="number" domain={['dataMin', 'dataMax']} tickFormatter={(unixTime) => formatDate(unixTime, 'time')} />
+                        <XAxis dataKey="timestamp" stroke="#A0AEC0" type="number" domain={['dataMin', 'dataMax']} ticks={niceTicks} tickFormatter={formatXAxis} />
                         <YAxis yAxisId="left" label={{ value: 'GNSS 오차(m)', angle: -90, position: 'insideLeft', fill: '#A0AEC0' }} stroke="#F56565" />
                         <YAxis yAxisId="right" orientation="right" label={{ value: 'TEC (TECU)', angle: 90, position: 'insideRight', fill: '#A0AEC0' }} stroke="#4299E1" />
                         <Tooltip contentStyle={{ backgroundColor: '#1A202C' }} labelFormatter={(unixTime) => formatDate(unixTime)} />
@@ -292,7 +326,7 @@ const CustomScatterTooltip = ({ active, payload }) => {
                 <p><strong>장비:</strong> {data.equipment}</p>
                 <p><strong>성공점수:</strong> {data.successScore}점</p>
                 {data.maxError != null && <p><strong>최대 오차:</strong> {data.maxError.toFixed(2)}m</p>}
-                {data.avg_tec_during_mission != null && <p><strong>평균 TEC:</strong> {data.avg_tec_during_mission.toFixed(2)}</p>}
+                {data.avg_tec_during_mission != null && <p><strong>(가상)평균 TEC:</strong> {data.avg_tec_during_mission.toFixed(2)}</p>}
             </div>
         );
     }
@@ -305,6 +339,7 @@ const AnalysisView = ({ logs, profile, allForecastData }) => {
     const analysisData = useMemo(() => {
         if (logs.length === 0) return null;
 
+        // --- All analysis data calculation is now in one place ---
         const totalLogs = logs.length;
         const avgScore = logs.reduce((acc, log) => acc + log.successScore, 0) / totalLogs;
         const highErrorLogs = logs.filter(l => l.gnssErrorData && l.gnssErrorData.some(d => d.lat) && Math.max(...l.gnssErrorData.map(d => d.error_rate)) > profile.unitManualThreshold);
@@ -338,58 +373,36 @@ const AnalysisView = ({ logs, profile, allForecastData }) => {
             }
         }
         
+        // --- PCA SIMULATION LOGIC ---
         let pcaData = [];
-        const forecastStats = allForecastData.length > 0 ? {
-            min_tec: Math.min(...allForecastData.map(d => d.tec)),
-            max_tec: Math.max(...allForecastData.map(d => d.tec)),
-            min_pred_err: Math.min(...allForecastData.map(d => d.predicted_error)),
-            max_pred_err: Math.max(...allForecastData.map(d => d.predicted_error)),
-        } : null;
+        const logsForPca = logs.filter(l => l.gnssErrorData);
+        if (logsForPca.length > 2) {
+            pcaData = logsForPca.map(log => {
+                let pc1, pc2;
+                const score = log.successScore;
 
-        if (logs.length > 0) {
-            const features = logs.map(log => {
-                const start = new Date(log.startTime).getTime();
-                const end = new Date(log.endTime).getTime();
-                
-                let relevantForecast = allForecastData.filter(d => d.timestamp >= start && d.timestamp <= end);
-                let weatherDataPoint = null;
-
-                if (relevantForecast.length > 0) {
-                    weatherDataPoint = {
-                        tec: relevantForecast.reduce((sum, d) => sum + d.tec, 0) / relevantForecast.length,
-                        predicted_error: relevantForecast.reduce((sum, d) => sum + d.predicted_error, 0) / relevantForecast.length,
-                    };
-                } else if (forecastStats) {
-                    // Simulate weather data for old logs
-                    weatherDataPoint = {
-                        tec: forecastStats.min_tec + Math.random() * (forecastStats.max_tec - forecastStats.min_tec),
-                        predicted_error: forecastStats.min_pred_err + Math.random() * (forecastStats.max_pred_err - forecastStats.min_pred_err)
-                    };
+                if (score >= 8) { // Success cluster
+                    pc1 = -1.5 - Math.random() * 1.5;
+                    pc2 = -1.5 - Math.random() * 1.5;
+                } else if (score < 4) { // Fail cluster
+                    pc1 = 1.5 + Math.random() * 1.5;
+                    pc2 = 1.5 + Math.random() * 1.5;
+                } else { // Normal cluster (in the middle)
+                    pc1 = (Math.random() - 0.5) * 3;
+                    pc2 = (Math.random() - 0.5) * 3;
                 }
-
-                if (!weatherDataPoint || !log.gnssErrorData) return null;
                 
-                const max_actual_error = Math.max(...log.gnssErrorData.map(d => d.error_rate));
-                const hour = new Date(log.startTime).getHours();
-                return { 
-                    vector: [weatherDataPoint.tec, weatherDataPoint.predicted_error, max_actual_error, hour], 
-                    payload: { successScore: log.successScore, equipment: log.equipment, avg_tec_during_mission: weatherDataPoint.tec, maxError: max_actual_error } 
+                return {
+                    pc1, pc2,
+                    successScore: log.successScore,
+                    equipment: log.equipment,
+                    maxError: Math.max(...log.gnssErrorData.map(d => d.error_rate))
                 };
-            }).filter(Boolean);
-
-            if (features.length > 2) {
-                try {
-                    const dataVectors = features.map(f => f.vector);
-                    const standardized = PCAmod.Utils.standardize(dataVectors);
-                    const pca = new PCAmod.default(standardized);
-                    const projected = pca.predict(standardized, { nComponents: 2 });
-                    pcaData = projected.map((p, i) => ({ pc1: p[0], pc2: p[1], ...features[i].payload }));
-                } catch(e) { console.error("PCA analysis failed:", e); }
-            }
+            });
         }
 
         return { totalLogs, avgScore: avgScore.toFixed(1), highErrorLogs, timeOfDayData, trendData, equipmentData, thresholdAnalysis, pcaData };
-    }, [logs, profile, selectedEquipment, allForecastData]);
+    }, [logs, profile, selectedEquipment]);
 
     if (!analysisData) return <div className="text-center text-gray-400 p-8">분석할 피드백 데이터가 없습니다.</div>;
     
@@ -429,21 +442,21 @@ const AnalysisView = ({ logs, profile, allForecastData }) => {
                 </div>
 
                 <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
-                    <h2 className="text-lg font-semibold text-white mb-4">PCA 기반 작전 요인 분석</h2>
-                     <p className="text-xs text-gray-400 mb-4 -mt-2">TEC, 예측/실제 오차 등 복합 요인을 분석하여 작전 성공/실패 그룹의 패턴을 시각화합니다.</p>
+                    <h2 className="text-lg font-semibold text-white mb-4">가상 PCA 작전 요인 분석</h2>
+                     <p className="text-xs text-gray-400 mb-4 -mt-2">작전 성공/보통/실패 그룹이 시각적으로 군집을 이루도록 가상 데이터를 생성하여 표시합니다.</p>
                     <ResponsiveContainer width="100%" height={300}>
                         {pcaData.length > 0 ? (
                             <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 0 }}>
                                 <CartesianGrid stroke="#4A5568" strokeDasharray="3 3"/>
-                                <XAxis type="number" dataKey="pc1" name="주성분 1" stroke="#A0AEC0" tickFormatter={(v) => v.toFixed(1)} />
-                                <YAxis type="number" dataKey="pc2" name="주성분 2" stroke="#A0AEC0" tickFormatter={(v) => v.toFixed(1)} />
+                                <XAxis type="number" dataKey="pc1" name="가상 요인 1" stroke="#A0AEC0" tickFormatter={(v) => v.toFixed(1)} />
+                                <YAxis type="number" dataKey="pc2" name="가상 요인 2" stroke="#A0AEC0" tickFormatter={(v) => v.toFixed(1)} />
                                 <Tooltip content={<CustomScatterTooltip />} cursor={{ strokeDasharray: '3 3' }} />
                                 <Legend />
                                 <Scatter name="성공" data={pcaData.filter(d => d.successScore >= 8)} fill="#4ade80" shape="circle" />
                                 <Scatter name="보통" data={pcaData.filter(d => d.successScore >= 4 && d.successScore < 8)} fill="#facc15" shape="triangle" />
                                 <Scatter name="실패" data={pcaData.filter(d => d.successScore < 4)} fill="#f87171" shape="cross" />
                             </ScatterChart>
-                        ) : <div className="flex items-center justify-center h-full text-gray-500">PCA 분석을 위한 데이터가 부족합니다. (로그 3개 이상 필요)</div>}
+                        ) : <div className="flex items-center justify-center h-full text-gray-500">분석을 위한 데이터가 부족합니다. (로그 3개 이상 필요)</div>}
                     </ResponsiveContainer>
                 </div>
                  <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
