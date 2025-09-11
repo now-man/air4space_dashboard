@@ -5,7 +5,7 @@ import { ko } from 'date-fns/locale';
 import { Zap, Settings, ShieldAlert, BotMessageSquare, Plus, Trash2, Save, ArrowLeft, UploadCloud, TestTube2, BrainCircuit, Eraser, Lightbulb, RefreshCw, PlayCircle, MapPin, Edit3, Compass, Activity, Calendar as CalendarIcon, MoreVertical, X, Edit, Home, BarChart3, Target, PlusCircle, Pencil } from 'lucide-react';
 import { MapContainer, TileLayer, CircleMarker, Tooltip as LeafletTooltip, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import PCA, { Utils } from 'pca-js';
+import * as PCAmod from 'pca-js';
 import 'react-day-picker/dist/style.css';
 
 // --- Helper Functions ---
@@ -298,20 +298,33 @@ const CustomScatterTooltip = ({ active, payload }) => {
     }
     return null;
 };
+const StatCard = ({ title, value, icon, color }) => (<div className="bg-gray-800 p-4 rounded-xl flex items-center gap-4 border border-gray-700"><div className={`p-3 rounded-lg bg-${color}-500/20 text-${color}-400`}>{icon}</div><div><p className="text-gray-400 text-sm">{title}</p><p className="text-2xl font-bold text-white">{value}</p></div></div>);
 const AnalysisView = ({ logs, profile, allForecastData }) => {
     const [selectedEquipment, setSelectedEquipment] = useState(profile.equipment[0]?.name || '');
 
     const analysisData = useMemo(() => {
         if (logs.length === 0) return null;
+
+        const totalLogs = logs.length;
+        const avgScore = logs.reduce((acc, log) => acc + log.successScore, 0) / totalLogs;
+        const highErrorLogs = logs.filter(l => l.gnssErrorData && l.gnssErrorData.some(d => d.lat) && Math.max(...l.gnssErrorData.map(d => d.error_rate)) > profile.unitManualThreshold);
+        
+        const timeOfDayData = [{ n: '새벽 (00-06)', s: 0, f: 0 }, { n: '오전 (06-12)', s: 0, f: 0 }, { n: '오후 (12-18)', s: 0, f: 0 }, { n: '야간 (18-24)', s: 0, f: 0 }];
+        logs.forEach(log => { const h = new Date(log.startTime).getHours(); const p = timeOfDayData[Math.floor(h / 6)]; log.successScore >= 8 ? p.s++ : p.f++; });
+        
+        const weeklyTrends = {};
+        logs.forEach(log => { const d = new Date(log.startTime); const weekStart = new Date(d.setDate(d.getDate() - (d.getDay() || 7) + 1)).toISOString().slice(0, 10); if (!weeklyTrends[weekStart]) { weeklyTrends[weekStart] = { totalScore: 0, count: 0, name: weekStart }; } weeklyTrends[weekStart].totalScore += log.successScore; weeklyTrends[weekStart].count++; });
+        const trendData = Object.values(weeklyTrends).map(w => ({ ...w, avgScore: parseFloat((w.totalScore / w.count).toFixed(1)) })).sort((a, b) => new Date(a.name) - new Date(b.name));
+        
+        const equipmentData = profile.equipment.map(eq => {
+            const eqLogs = logs.filter(l => l.equipment === eq.name); if (eqLogs.length === 0) return { name: eq.name, success: 0, normal: 0, fail: 0, count: 0 };
+            return { name: eq.name, success: eqLogs.filter(l => l.successScore >= 8).length, normal: eqLogs.filter(l => l.successScore >= 4 && l.successScore < 8).length, fail: eqLogs.filter(l => l.successScore < 4).length, count: eqLogs.length };
+        }).sort((a,b) => b.count - a.count);
         
         const thresholdAnalysis = { data: [], autoThreshold: null };
         if (selectedEquipment) {
             const equipmentLogs = logs.filter(l => l.equipment === selectedEquipment && l.gnssErrorData);
-            thresholdAnalysis.data = equipmentLogs.map(log => ({
-                successScore: log.successScore,
-                maxError: Math.max(...log.gnssErrorData.map(d => d.error_rate)),
-                equipment: log.equipment
-            }));
+            thresholdAnalysis.data = equipmentLogs.map(log => ({ successScore: log.successScore, maxError: Math.max(...log.gnssErrorData.map(d => d.error_rate)), equipment: log.equipment }));
             const errRatesOnFailure = equipmentLogs.filter(l => l.successScore < 8).flatMap(l => l.gnssErrorData.map(d => d.error_rate));
             if (errRatesOnFailure.length >= 3) {
                 const p75 = [...errRatesOnFailure].sort((a, b) => a - b)[Math.floor(errRatesOnFailure.length * 0.75)];
@@ -329,35 +342,35 @@ const AnalysisView = ({ logs, profile, allForecastData }) => {
                 const avg_predicted_error = relevantForecast.reduce((sum, d) => sum + d.predicted_error, 0) / relevantForecast.length;
                 const max_actual_error = Math.max(...log.gnssErrorData.map(d => d.error_rate));
                 const hour = new Date(log.startTime).getHours();
-                return {
-                    vector: [avg_tec, avg_predicted_error, max_actual_error, hour],
-                    payload: { successScore: log.successScore, equipment: log.equipment, avg_tec_during_mission: avg_tec, maxError: max_actual_error }
-                };
+                return { vector: [avg_tec, avg_predicted_error, max_actual_error, hour], payload: { successScore: log.successScore, equipment: log.equipment, avg_tec_during_mission: avg_tec, maxError: max_actual_error } };
             }).filter(Boolean);
 
             if (features.length > 2) {
                 try {
                     const dataVectors = features.map(f => f.vector);
-                    const standardized = Utils.standardize(dataVectors);
-                    const pca = new PCA(standardized);
+                    const standardized = PCAmod.Utils.standardize(dataVectors);
+                    const pca = new PCAmod.default(standardized);
                     const projected = pca.predict(standardized, { nComponents: 2 });
-                    pcaData = projected.map((p, i) => ({
-                        pc1: p[0], pc2: p[1], ...features[i].payload
-                    }));
-                } catch(e) {
-                    console.error("PCA analysis failed:", e);
-                }
+                    pcaData = projected.map((p, i) => ({ pc1: p[0], pc2: p[1], ...features[i].payload }));
+                } catch(e) { console.error("PCA analysis failed:", e); }
             }
         }
 
-        return { thresholdAnalysis, pcaData };
+        return { totalLogs, avgScore: avgScore.toFixed(1), highErrorLogs, timeOfDayData, trendData, equipmentData, thresholdAnalysis, pcaData };
     }, [logs, profile, selectedEquipment, allForecastData]);
 
     if (!analysisData) return <div className="text-center text-gray-400 p-8">분석할 피드백 데이터가 없습니다.</div>;
+    
+    const { totalLogs, avgScore, highErrorLogs, timeOfDayData, trendData, equipmentData, thresholdAnalysis, pcaData } = analysisData;
 
     return (
         <div className="space-y-6">
             <h1 className="text-2xl font-bold text-white mb-6">피드백 종합 분석</h1>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <StatCard title="총 피드백 수" value={`${totalLogs} 건`} icon={<BarChart3 size={24}/>} color="cyan" />
+                <StatCard title="평균 작전 성공 점수" value={`${avgScore} 점`} icon={<Target size={24}/>} color="green" />
+                <StatCard title="임계값 초과 작전 수" value={`${highErrorLogs.length} 건`} icon={<ShieldAlert size={24}/>} color="red" />
+            </div>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
                     <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-4 gap-2">
@@ -371,13 +384,12 @@ const AnalysisView = ({ logs, profile, allForecastData }) => {
                             <CartesianGrid stroke="#4A5568" strokeDasharray="3 3"/>
                             <XAxis type="number" dataKey="successScore" name="성공 점수" unit="점" stroke="#A0AEC0" domain={[0, 10]}/>
                             <YAxis type="number" dataKey="maxError" name="최대 오차" unit="m" stroke="#A0AEC0" />
-                            <ZAxis type="category" dataKey="equipment" />
                             <Tooltip content={<CustomScatterTooltip />} cursor={{ strokeDasharray: '3 3' }} />
                             <Legend />
-                            <Scatter name="성공 작전" data={analysisData.thresholdAnalysis.data.filter(d => d.successScore >= 8)} fill="#4ade80" />
-                            <Scatter name="보통/실패 작전" data={analysisData.thresholdAnalysis.data.filter(d => d.successScore < 8)} fill="#f87171" />
-                            {analysisData.thresholdAnalysis.autoThreshold != null && (
-                                <ReferenceLine y={analysisData.thresholdAnalysis.autoThreshold} stroke="#facc15" strokeDasharray="4 4" label={{ value: `자동 임계값 (${analysisData.thresholdAnalysis.autoThreshold.toFixed(1)}m)`, position: 'insideTopLeft', fill: '#facc15' }} />
+                            <Scatter name="성공 작전" data={thresholdAnalysis.data.filter(d => d.successScore >= 8)} fill="#4ade80" />
+                            <Scatter name="보통/실패 작전" data={thresholdAnalysis.data.filter(d => d.successScore < 8)} fill="#f87171" />
+                            {thresholdAnalysis.autoThreshold != null && (
+                                <ReferenceLine y={thresholdAnalysis.autoThreshold} stroke="#facc15" strokeDasharray="4 4" label={{ value: `자동 임계값 (${thresholdAnalysis.autoThreshold.toFixed(1)}m)`, position: 'insideTopLeft', fill: '#facc15' }} />
                             )}
                         </ScatterChart>
                     </ResponsiveContainer>
@@ -387,17 +399,36 @@ const AnalysisView = ({ logs, profile, allForecastData }) => {
                     <h2 className="text-lg font-semibold text-white mb-4">PCA 기반 작전 요인 분석</h2>
                      <p className="text-xs text-gray-400 mb-4 -mt-2">TEC, 예측/실제 오차 등 복합 요인을 분석하여 작전 성공/실패 그룹의 패턴을 시각화합니다.</p>
                     <ResponsiveContainer width="100%" height={300}>
-                        {analysisData.pcaData.length > 0 ? (
+                        {pcaData.length > 0 ? (
                             <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 0 }}>
                                 <CartesianGrid stroke="#4A5568" strokeDasharray="3 3"/>
                                 <XAxis type="number" dataKey="pc1" name="주성분 1" stroke="#A0AEC0" tickFormatter={(v) => v.toFixed(1)} />
                                 <YAxis type="number" dataKey="pc2" name="주성분 2" stroke="#A0AEC0" tickFormatter={(v) => v.toFixed(1)} />
                                 <Tooltip content={<CustomScatterTooltip />} cursor={{ strokeDasharray: '3 3' }} />
-                                <Scatter name="성공 작전" data={analysisData.pcaData.filter(d => d.successScore >= 8)} fill="#4ade80" shape="circle" />
-                                <Scatter name="보통/실패 작전" data={analysisData.pcaData.filter(d => d.successScore < 8)} fill="#f87171" shape="cross" />
+                                <Scatter name="성공 작전" data={pcaData.filter(d => d.successScore >= 8)} fill="#4ade80" shape="circle" />
+                                <Scatter name="보통/실패 작전" data={pcaData.filter(d => d.successScore < 8)} fill="#f87171" shape="cross" />
                             </ScatterChart>
                         ) : <div className="flex items-center justify-center h-full text-gray-500">PCA 분석을 위한 데이터가 부족합니다. (최소 5회 이상)</div>}
                     </ResponsiveContainer>
+                </div>
+                 <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
+                    <h2 className="text-lg font-semibold text-white mb-4">시간대별 작전 성공률</h2>
+                    <ResponsiveContainer width="100%" height={300}><BarChart data={timeOfDayData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" stroke="#4A5568" /><XAxis dataKey="n" stroke="#A0AEC0" tick={{fontSize: 12}} /><YAxis stroke="#A0AEC0" /><Tooltip contentStyle={{ backgroundColor: '#1A202C' }} /><Legend /><Bar dataKey="s" stackId="a" fill="#4ade80" name="성공" /><Bar dataKey="f" stackId="a" fill="#f87171" name="실패/보통" /></BarChart></ResponsiveContainer>
+                </div>
+                 <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
+                    <h2 className="text-lg font-semibold text-white mb-4">주간 성공률 추이</h2>
+                    <ResponsiveContainer width="100%" height={300}><LineChart data={trendData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" stroke="#4A5568" /><XAxis dataKey="name" stroke="#A0AEC0" tick={{fontSize: 10}} /><YAxis stroke="#A0AEC0" domain={[0, 10]}/><Tooltip contentStyle={{ backgroundColor: '#1A202C' }} /><Legend /><Line type="monotone" dataKey="avgScore" name="주간 평균 점수" stroke="#8884d8" /></LineChart></ResponsiveContainer>
+                </div>
+                <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
+                    <h2 className="text-lg font-semibold text-white mb-4">장비별 작전 수행 현황</h2>
+                    <ResponsiveContainer width="100%" height={300}><BarChart data={equipmentData} layout="vertical" margin={{ top: 5, right: 20, left: 10, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" stroke="#4A5568" /><XAxis type="number" stroke="#A0AEC0" /><YAxis type="category" dataKey="name" stroke="#A0AEC0" width={100} tick={{fontSize: 12}} /><Tooltip contentStyle={{ backgroundColor: '#1A202C' }} /><Legend /><Bar dataKey="success" stackId="a" fill="#4ade80" name="성공" /><Bar dataKey="normal" stackId="a" fill="#facc15" name="보통" /><Bar dataKey="fail" stackId="a" fill="#f87171" name="실패" /></BarChart></ResponsiveContainer>
+                </div>
+                <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
+                     <h2 className="text-lg font-semibold text-white mb-4">GNSS 오차 다발 지역</h2>
+                     <MapContainer key={profile.location.coords.lat + "-" + profile.location.coords.lon} center={[profile.location.coords.lat, profile.location.coords.lon]} zoom={8} style={{ height: "300px", width: "100%", borderRadius: "0.75rem" }}>
+                        <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; CARTO' />
+                        {highErrorLogs.map(log => { const pos = log.gnssErrorData[0]; const maxError = Math.max(...log.gnssErrorData.map(d => d.error_rate)); return <CircleMarker key={log.id} center={[pos.lat, pos.lon]} radius={6} pathOptions={{ color: '#f87171', fillColor: '#f87171', fillOpacity: 0.7 }}><LeafletTooltip>장비: {log.equipment}<br/>최대 오차: {maxError.toFixed(1)}m</LeafletTooltip></CircleMarker> })}
+                     </MapContainer>
                 </div>
             </div>
         </div>
@@ -477,7 +508,7 @@ const SettingsView = ({ profiles, setProfiles, activeProfile, setActiveProfileId
         </div><div className="mt-8 flex justify-end"><button onClick={handleSave} className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-6 rounded-lg flex items-center space-x-2"><Save className="w-5 h-5" /><span>저장</span></button></div></div>);
 };
 const DeveloperTestView = ({ setLogs, profile, goBack }) => {
-    const generateMockLogs = () => { if (!window.confirm("기존 피드백을 삭제하고, 90일간의 테스트 데이터를 대량 생성합니까?")) return; const newLogs = []; const today = new Date(); for (let i = 0; i < 90; i++) { const date = new Date(today); date.setDate(today.getDate() - i); const logCount = Math.floor(Math.random() * 4) + 5; for (let j = 0; j < logCount; j++) { const eq = profile.equipment[Math.floor(Math.random() * profile.equipment.length)]; const isBadWeather = Math.random() < 0.15; const baseError = isBadWeather ? (eq.manualThreshold * 0.7 + Math.random() * 5) : (2 + Math.random() * 3); const successScore = baseError > eq.manualThreshold * 0.9 ? Math.floor(1 + Math.random() * 5) : (baseError > eq.manualThreshold * 0.6 ? Math.floor(6 + Math.random() * 3) : Math.floor(8 + Math.random() * 3)); const startTime = new Date(date); startTime.setHours(Math.floor(Math.random() * 23), Math.floor(Math.random() * 60)); const endTime = new Date(startTime.getTime() + (30 + Math.floor(Math.random() * 90)) * 60000); const data = []; let curTime = new Date(startTime); const p0 = [36.5+Math.random()*0.5, 127.2+Math.random()*0.5]; const p1 = [36.5+Math.random()*0.5, 127.2+Math.random()*0.5]; const p2 = Math.random() < 0.5 ? p0 : [36.5+Math.random()*0.5, 127.2+Math.random()*0.5]; let step = 0; while (curTime <= endTime) { const err = Math.max(1.0, baseError + (Math.random() - 0.5) * 4); const entry = { date: curTime.toISOString(), error_rate: parseFloat(err.toFixed(2))}; if (eq.usesGeoData) { const progress = step / ((endTime - startTime) / 60000); const pos = getPointOnBezierCurve(progress, p0, p1, p2); entry.lat = pos[0]; entry.lon = pos[1]; } data.push(entry); curTime.setMinutes(curTime.getMinutes() + 1); step++; } newLogs.push({ id: Date.now() + i * 100 + j, startTime: startTime.toISOString(), endTime: endTime.toISOString(), equipment: eq.name, successScore, gnssErrorData: data }); } } setLogs(newLogs.sort((a, b) => new Date(b.startTime) - new Date(a.startTime))); alert(`${newLogs.length}개의 테스트 피드백이 생성되었습니다.`); };
+    const generateMockLogs = () => { if (!window.confirm("기존 피드백을 삭제하고, 최근 3일간의 테스트 데이터를 대량 생성합니까?")) return; const newLogs = []; const today = new Date(); for (let i = 0; i < 3; i++) { const date = new Date(today); date.setDate(today.getDate() - i); const logCount = Math.floor(Math.random() * 10) + 15; for (let j = 0; j < logCount; j++) { const eq = profile.equipment[Math.floor(Math.random() * profile.equipment.length)]; const isBadWeather = Math.random() < 0.2; const baseError = isBadWeather ? (eq.manualThreshold * 0.7 + Math.random() * 5) : (2 + Math.random() * 3); const successScore = baseError > eq.manualThreshold * 0.9 ? Math.floor(1 + Math.random() * 5) : (baseError > eq.manualThreshold * 0.6 ? Math.floor(6 + Math.random() * 3) : Math.floor(8 + Math.random() * 3)); const startTime = new Date(date); startTime.setHours(Math.floor(Math.random() * 23), Math.floor(Math.random() * 60)); const endTime = new Date(startTime.getTime() + (30 + Math.floor(Math.random() * 90)) * 60000); const data = []; let curTime = new Date(startTime); const p0 = [profile.location.coords.lat+Math.random()*0.5, profile.location.coords.lon+Math.random()*0.5]; const p1 = [profile.location.coords.lat+Math.random()*0.5, profile.location.coords.lon+Math.random()*0.5]; const p2 = [profile.location.coords.lat+Math.random()*0.5, profile.location.coords.lon+Math.random()*0.5]; let step = 0; while (curTime <= endTime) { const err = Math.max(1.0, baseError + (Math.random() - 0.5) * 4); const entry = { date: curTime.toISOString(), error_rate: parseFloat(err.toFixed(2))}; if (eq.usesGeoData) { const progress = step / ((endTime - startTime) / 60000 || 1); const pos = getPointOnBezierCurve(progress, p0, p1, p2); entry.lat = pos[0]; entry.lon = pos[1]; } data.push(entry); curTime.setMinutes(curTime.getMinutes() + 1); step++; } newLogs.push({ id: Date.now() + i * 100 + j, startTime: startTime.toISOString(), endTime: endTime.toISOString(), equipment: eq.name, successScore, gnssErrorData: data }); } } setLogs(newLogs.sort((a, b) => new Date(b.startTime) - new Date(a.startTime))); alert(`${newLogs.length}개의 테스트 피드백이 생성되었습니다.`); };
     const clearLogs = () => { if (window.confirm("모든 피드백 데이터를 삭제하시겠습니까?")) { setLogs([]); alert("모든 피드백이 삭제되었습니다."); }};
     const resetAppState = () => { if (window.confirm("앱의 모든 로컬 데이터(프로필, 피드백 로그)를 삭제하고 초기 상태로 되돌리시겠습니까?")) { localStorage.clear(); alert("앱 상태가 초기화되었습니다. 페이지를 새로고침합니다."); window.location.reload(); }};
     return (<div className="bg-gray-800 p-6 md:p-8 rounded-xl border border-gray-700 max-w-2xl mx-auto"><div className="flex items-center mb-6"><button onClick={goBack} className="mr-4 p-2 rounded-full hover:bg-gray-700"><ArrowLeft className="w-6 h-6" /></button><h2 className="text-xl md:text-2xl font-bold text-white">개발자 테스트 도구</h2></div><div className="space-y-6"><div><h3 className="text-lg font-semibold text-white mb-3">피드백 데이터 관리</h3><div className="flex space-x-4"><button onClick={generateMockLogs} className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><TestTube2 size={20} /><span>테스트 데이터 생성</span></button><button onClick={clearLogs} className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><Eraser size={20} /><span>모든 데이터 삭제</span></button></div></div><div><h3 className="text-lg font-semibold text-white mb-3 text-red-400">위험 영역</h3><div className="flex space-x-4"><button onClick={resetAppState} className="w-full bg-red-800 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><RefreshCw size={20} /><span>앱 상태 전체 초기화</span></button></div></div></div></div>);
