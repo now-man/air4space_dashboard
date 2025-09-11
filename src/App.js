@@ -227,7 +227,7 @@ const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold })
                  : (<ResponsiveContainer width="100%" height="100%">
                      <LineChart data={displayData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" />
-                        <XAxis dataKey="timestamp" stroke="#A0AEC0" type="number" domain={['dataMin', 'dataMax']} ticks={niceTicks} tickFormatter={formatXAxis} />
+                        <XAxis dataKey="timestamp" stroke="#A0AEC0" type="number" domain={[timeRange.start, timeRange.end]} ticks={niceTicks} tickFormatter={formatXAxis} />
                         <YAxis yAxisId="left" label={{ value: 'GNSS 오차(m)', angle: -90, position: 'insideLeft', fill: '#A0AEC0' }} stroke="#F56565" />
                         <YAxis yAxisId="right" orientation="right" label={{ value: 'TEC (TECU)', angle: 90, position: 'insideRight', fill: '#A0AEC0' }} stroke="#4299E1" />
                         <Tooltip contentStyle={{ backgroundColor: '#1A202C' }} labelFormatter={(unixTime) => formatDate(unixTime)} />
@@ -337,11 +337,11 @@ const StatCard = ({ title, value, icon, color }) => (<div className="bg-gray-800
 
 const ShapeIcon = ({ shape, color = "white" }) => {
     switch(shape) {
-        case 'circle': return <Circle size={14} fill={color} stroke="none"/>;
-        case 'triangle': return <Triangle size={14} fill={color} stroke="none"/>;
-        case 'square': return <Square size={14} fill={color} stroke="none"/>;
-        case 'diamond': return <Square size={14} fill={color} stroke="none" className="rotate-45"/>;
-        default: return <Plus size={14} stroke={color}/>
+        case 'circle': return <Circle size={14} className="text-white"/>;
+        case 'triangle': return <Triangle size={14} className="text-white"/>;
+        case 'square': return <Square size={14} className="text-white"/>;
+        case 'diamond': return <Square size={14} className="text-white rotate-45"/>;
+        default: return <Plus size={14} className="text-white"/>
     }
 }
 
@@ -387,11 +387,15 @@ const AnalysisView = ({ logs, profile }) => {
         let pcaData = [];
         const logsForPca = logs.filter(l => l.gnssErrorData);
         if (logsForPca.length > 2) {
-            const generateClusterPoint = (centerX, centerY, spread) => {
+            const generateClusterPoint = (centers, spread) => {
+                const center = centers[Math.floor(Math.random() * centers.length)];
                 const angle = Math.random() * 2 * Math.PI;
                 const radius = Math.sqrt(Math.random()) * spread;
-                return { x: centerX + radius * Math.cos(angle), y: centerY + radius * Math.sin(angle) };
+                return { x: center.x + radius * Math.cos(angle), y: center.y + radius * Math.sin(angle) };
             };
+            const successCenters = [{x: -2, y: -1.5}, {x: -1.5, y: -2}];
+            const failCenters = [{x: 2, y: 1.5}, {x: 1.5, y: 2}];
+            const normalCenters = [{x: 0, y: 0}, {x: -0.5, y: 0.5}, {x: 0.5, y: -0.5}];
 
             pcaData = logsForPca.map(log => {
                 let scoreCategory;
@@ -399,15 +403,15 @@ const AnalysisView = ({ logs, profile }) => {
                 else if (log.successScore >= 4) scoreCategory = 'normal';
                 else scoreCategory = 'fail';
 
-                if (Math.random() < 0.1) { // 10% noise
+                if (Math.random() < 0.1) { 
                     const categories = ['success', 'normal', 'fail'];
                     scoreCategory = categories[Math.floor(Math.random() * categories.length)];
                 }
                 
                 let point;
-                if (scoreCategory === 'success') { point = generateClusterPoint(-1.5, -1.5, 1.8);
-                } else if (scoreCategory === 'fail') { point = generateClusterPoint(1.5, 1.5, 1.8);
-                } else { point = generateClusterPoint(0, 0, 2.5); }
+                if (scoreCategory === 'success') { point = generateClusterPoint(successCenters, 1.5);
+                } else if (scoreCategory === 'fail') { point = generateClusterPoint(failCenters, 1.5);
+                } else { point = generateClusterPoint(normalCenters, 2); }
                 
                 return { pc1: point.x, pc2: point.y, successScore: log.successScore, equipment: log.equipment, maxError: Math.max(...log.gnssErrorData.map(d => d.error_rate)), startTime: log.startTime, endTime: log.endTime };
             });
@@ -425,7 +429,13 @@ const AnalysisView = ({ logs, profile }) => {
     if (!analysisData) return <div className="text-center text-gray-400 p-8">분석할 피드백 데이터가 없습니다.</div>;
     
     const { totalLogs, avgScore, highErrorLogs, timeOfDayData, trendData, equipmentData, thresholdAnalysis, pcaDataByEquipment } = analysisData;
-    const shapeMap = { "JDAM": "circle", "정찰 드론 (A형)": "triangle", "전술 데이터링크": "square", "KF-21 비행체": "diamond" };
+    const shapeMap = useMemo(() => {
+        const shapes = ['circle', 'triangle', 'square', 'diamond', 'cross', 'star', 'wye'];
+        return profile.equipment.reduce((acc, eq, index) => {
+            acc[eq.name] = shapes[index % shapes.length];
+            return acc;
+        }, {});
+    }, [profile.equipment]);
     const getColorByScore = (score) => { if (score >= 8) return '#4ade80'; if (score >= 4) return '#facc15'; return '#f87171'; };
 
     return (
@@ -483,7 +493,7 @@ const AnalysisView = ({ logs, profile }) => {
                         <div className="flex items-center gap-2"> <div className="w-3 h-3 rounded-full bg-red-500"/> <span>실패</span> </div>
                          <div className="w-full h-px bg-gray-700 md:w-px md:h-4"></div>
                         {Object.entries(shapeMap).map(([name, shape]) => (
-                            <div key={name} className="flex items-center gap-2"> <ShapeIcon shape={shape} color="white"/> <span>{name}</span></div>
+                            <div key={name} className="flex items-center gap-2"> <ShapeIcon shape={shape}/> <span>{name}</span></div>
                         ))}
                     </div>
                 </div>
