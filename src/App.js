@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceArea, BarChart, Bar, ScatterChart, Scatter, ZAxis, Cell, Label } from 'recharts';
 import { DayPicker } from 'react-day-picker';
 import { ko } from 'date-fns/locale';
-import { Zap, Settings, ShieldAlert, BotMessageSquare, Plus, Trash2, Save, ArrowLeft, UploadCloud, TestTube2, BrainCircuit, Eraser, Lightbulb, RefreshCw, PlayCircle, MapPin, Edit3, Compass, Activity, Calendar as CalendarIcon, MoreVertical, X, Edit, Home, BarChart3, Target, PlusCircle, Pencil, Square, Circle, Triangle } from 'lucide-react';
+import { Zap, Settings, ShieldAlert, BotMessageSquare, Plus, Trash2, Save, ArrowLeft, UploadCloud, TestTube2, BrainCircuit, Eraser, Lightbulb, RefreshCw, PlayCircle, MapPin, Edit3, Compass, Activity, Calendar as CalendarIcon, MoreVertical, X, Edit, Home, BarChart3, Target, PlusCircle, Pencil, Square, Circle, Triangle, Star, Diamond } from 'lucide-react';
 import { MapContainer, TileLayer, CircleMarker, Tooltip as LeafletTooltip, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'react-day-picker/dist/style.css';
@@ -19,32 +19,30 @@ const generateNiceTicks = (startTime, endTime) => {
     if (!startTime || !endTime) return [];
     const duration = endTime - startTime;
     const ticks = [startTime];
-    let interval, startPoint;
+    let interval;
+    const startPoint = new Date(startTime);
 
     if (duration <= 2 * 24 * 3600 * 1000) { 
         interval = 6 * 3600 * 1000;
-        startPoint = new Date(startTime);
         startPoint.setMinutes(0, 0, 0);
         startPoint.setHours(Math.ceil(startPoint.getHours() / 6) * 6);
     } else if (duration <= 10 * 24 * 3600 * 1000) {
         interval = 24 * 3600 * 1000;
-        startPoint = new Date(startTime);
         startPoint.setHours(0, 0, 0, 0);
     } else { 
         interval = 5 * 24 * 3600 * 1000;
-        startPoint = new Date(startTime);
         startPoint.setHours(0, 0, 0, 0);
     }
     
     let currentTick = startPoint.getTime();
-    while (currentTick < endTime) {
-        if (currentTick > startTime) {
+    while (currentTick <= endTime) {
+        if (currentTick >= startTime) {
             ticks.push(currentTick);
         }
         currentTick += interval;
     }
     ticks.push(endTime);
-    return Array.from(new Set(ticks));
+    return Array.from(new Set(ticks)).sort((a, b) => a - b);
 };
 
 // --- Main App Component ---
@@ -124,6 +122,9 @@ export default function App() {
   const addTodo = (todo) => { setTodoList(prev => [...prev, { ...todo, id: Date.now() }].sort((a,b) => a.time.localeCompare(b.time))); };
   const updateTodo = (updatedTodo) => { setTodoList(prev => prev.map(todo => todo.id === updatedTodo.id ? updatedTodo : todo).sort((a,b) => a.time.localeCompare(b.time))); };
   const deleteTodo = (todoId) => { setTodoList(prev => prev.filter(todo => todo.id !== todoId)); };
+  
+  const unitAutoThreshold = useMemo(() => activeProfile.equipment.length > 0 ? Math.min(...activeProfile.equipment.map(eq => eq.thresholdMode === 'auto' && eq.autoThreshold ? eq.autoThreshold : eq.manualThreshold)) : 10.0, [activeProfile.equipment]);
+  const activeUnitThreshold = activeProfile.unitThresholdMode === 'auto' ? unitAutoThreshold : activeProfile.unitManualThreshold;
 
   if (!activeProfile) {
     return <div className="bg-gray-900 text-gray-200 min-h-screen flex items-center justify-center">프로필 정보를 불러오는 데 실패했습니다. 앱을 초기화하거나 다시 시도해주세요.</div>
@@ -134,8 +135,8 @@ export default function App() {
       case 'settings': return <SettingsView profiles={allProfiles} setProfiles={setAllProfiles} activeProfile={activeProfile} setActiveProfileId={setActiveProfileId} goBack={() => setActiveView('dashboard')} createDefaultProfile={createDefaultProfile} />;
       case 'feedback': return <FeedbackView equipmentList={activeProfile.equipment} onSubmit={handleFeedbackSubmit} goBack={() => setActiveView('dashboard')} />;
       case 'dev': return <DeveloperTestView setLogs={setMissionLogs} profile={activeProfile} goBack={() => setActiveView('dashboard')} />;
-      case 'analysis': return <AnalysisView logs={missionLogs} profile={activeProfile} />;
-      default: return <DashboardView profile={activeProfile} allForecastData={allForecastData} forecastStatus={forecastStatus} logs={missionLogs} deleteLog={deleteLog} todoList={todoList} addTodo={addTodo} updateTodo={updateTodo} deleteTodo={deleteTodo} />;
+      case 'analysis': return <AnalysisView logs={missionLogs} profile={activeProfile} activeUnitThreshold={activeUnitThreshold} />;
+      default: return <DashboardView profile={activeProfile} allForecastData={allForecastData} forecastStatus={forecastStatus} logs={missionLogs} deleteLog={deleteLog} todoList={todoList} addTodo={addTodo} updateTodo={updateTodo} deleteTodo={deleteTodo} activeUnitThreshold={activeUnitThreshold} unitAutoThreshold={unitAutoThreshold} />;
     }
   };
 
@@ -255,9 +256,29 @@ const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold })
     );
 };
 const LiveMap = ({threshold, center}) => {
-    const [aircrafts, setAircrafts] = useState(() => [ { type: 'curve', p0: [center.lat + 0.1, center.lon - 0.5], p1: [center.lat - 0.3, center.lon], p2: [center.lat - 0.5, center.lon + 0.5] }, { type: 'loop', center: [center.lat, center.lon + 0.1], rx: 0.2, ry: 0.3 } ].map((p, i) => ({ id: i, ...p, progress: Math.random(), speed: 0.005 + Math.random() * 0.005, error: 5 + Math.random() * 5 })));
-    useEffect(() => { const timer = setInterval(() => setAircrafts(prev => prev.map(ac => ({ ...ac, progress: (ac.progress + ac.speed) % 1, error: Math.max(3.0, ac.error + (Math.random() - 0.5) * 2) }))), 2000); return () => clearInterval(timer); }, [center]);
-    return (<div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700 h-96"><h2 className="text-lg font-semibold mb-4 text-white">실시간 항적</h2><MapContainer key={center.lat + "-" + center.lon} center={[center.lat, center.lon]} zoom={9} style={{ height: "calc(100% - 40px)", width: "100%", borderRadius: "0.75rem", backgroundColor: "#333" }}> <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; CARTO' /> {aircrafts.map(ac => { let pos; if(ac.type === 'loop') { pos = [ac.center[0] + ac.rx * Math.cos(2*Math.PI*ac.progress), ac.center[1] + ac.ry * Math.sin(2*Math.PI*ac.progress)]; } else { pos = getPointOnBezierCurve(ac.progress, ac.p0, ac.p1, ac.p2); } return (<CircleMarker key={ac.id} center={pos} radius={6} pathOptions={{ color: getErrorColor(ac.error, threshold), fillColor: getErrorColor(ac.error, threshold), fillOpacity: 0.8 }}><LeafletTooltip>✈️ ID: {ac.id}<br />GNSS 오차: {ac.error.toFixed(2)}m</LeafletTooltip></CircleMarker>); })} </MapContainer> </div>);
+    const koreaBounds = { minLat: 33.0, maxLat: 38.5, minLon: 125.0, maxLon: 130.0 };
+    const [aircrafts, setAircrafts] = useState(() => Array.from({ length: 20 }).map((_, i) => ({
+        id: i,
+        p0: [
+            koreaBounds.minLat + Math.random() * (koreaBounds.maxLat - koreaBounds.minLat),
+            koreaBounds.minLon + Math.random() * (koreaBounds.maxLon - koreaBounds.minLon)
+        ],
+        p1: [
+            koreaBounds.minLat + Math.random() * (koreaBounds.maxLat - koreaBounds.minLat),
+            koreaBounds.minLon + Math.random() * (koreaBounds.maxLon - koreaBounds.minLon)
+        ],
+        p2: [
+            koreaBounds.minLat + Math.random() * (koreaBounds.maxLat - koreaBounds.minLat),
+            koreaBounds.minLon + Math.random() * (koreaBounds.maxLon - koreaBounds.minLon)
+        ],
+        progress: Math.random(),
+        speed: 0.003 + Math.random() * 0.005,
+        error: 5 + Math.random() * 5
+    })));
+
+    useEffect(() => { const timer = setInterval(() => setAircrafts(prev => prev.map(ac => ({ ...ac, progress: (ac.progress + ac.speed) % 1, error: Math.max(3.0, ac.error + (Math.random() - 0.5) * 2) }))), 2000); return () => clearInterval(timer); }, []);
+    
+    return (<div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700 h-96"><h2 className="text-lg font-semibold mb-4 text-white">실시간 항적 (한반도 전역)</h2><MapContainer key={center.lat + "-" + center.lon} center={[36.0, 127.5]} zoom={7} style={{ height: "calc(100% - 40px)", width: "100%", borderRadius: "0.75rem", backgroundColor: "#333" }}> <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; CARTO' /> {aircrafts.map(ac => { let pos = getPointOnBezierCurve(ac.progress, ac.p0, ac.p1, ac.p2); return (<CircleMarker key={ac.id} center={pos} radius={6} pathOptions={{ color: getErrorColor(ac.error, threshold), fillColor: getErrorColor(ac.error, threshold), fillOpacity: 0.8 }}><LeafletTooltip>✈️ ID: {ac.id}<br />GNSS 오차: {ac.error.toFixed(2)}m</LeafletTooltip></CircleMarker>); })} </MapContainer> </div>);
 };
 const AutoFitBounds = ({ bounds }) => { const map = useMap(); useEffect(() => { if (bounds) map.fitBounds(bounds, { padding: [20, 20] }); }, [bounds, map]); return null; };
 const FeedbackChart = ({ data, equipment }) => { const activeThreshold = equipment.thresholdMode === 'auto' && equipment.autoThreshold ? equipment.autoThreshold : equipment.manualThreshold; const segments = useMemo(() => { const segs = []; let cur = null; data.forEach(d => { if (d.error_rate > activeThreshold) { if (!cur) cur = { x1: d.date, x2: d.date }; else cur.x2 = d.date; } else { if (cur) { segs.push(cur); cur = null; } } }); if (cur) segs.push(cur); return segs; }, [data, activeThreshold]); return (<div className="mt-4 h-40"><ResponsiveContainer width="100%" height="100%"><LineChart data={data} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}> <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" /><XAxis dataKey="date" stroke="#A0AEC0" tick={{ fontSize: 10 }} tickFormatter={(tick) => formatDate(tick, 'time')} /> <YAxis stroke="#A0AEC0" tick={{ fontSize: 10 }} domain={[0, 'dataMax + 2']} tickFormatter={(tick) => tick.toFixed(1)} /> <Tooltip contentStyle={{ backgroundColor: '#1A202C' }} labelFormatter={(label) => formatDate(label)} /> <Line type="monotone" dataKey="error_rate" name="GNSS 오차(m)" stroke="#F56565" strokeWidth={2} dot={false} /> {segments.map((seg, i) => <ReferenceArea key={i} x1={seg.x1} x2={seg.x2} stroke="none" fill="#f56565" fillOpacity={0.3} />)} <ReferenceLine y={activeThreshold} label={{ value: "임계값", position: 'insideTopLeft', fill: '#4FD1C5', fontSize: 10 }} stroke="#4FD1C5" strokeDasharray="3 3" /> </LineChart></ResponsiveContainer></div>); };
@@ -267,12 +288,11 @@ const TodoList = ({ todoList, addTodo, updateTodo, deleteTodo }) => {
     const [editingTodo, setEditingTodo] = useState(null); const [menuTodo, setMenuTodo] = useState(null); const handleAdd = () => { const time = document.getElementById('todoTime').value; const text = document.getElementById('todoText').value; if(text) { addTodo({time, text, tag: 'Briefing'}); document.getElementById('todoText').value = ''; } }; const handleSave = (id) => { const time = document.getElementById(`edit-time-${id}`).value; const text = document.getElementById(`edit-text-${id}`).value; updateTodo({ ...editingTodo, time, text }); setEditingTodo(null); }; const handleEditClick = () => { setEditingTodo(menuTodo); setMenuTodo(null); }; const handleDeleteClick = () => { deleteTodo(menuTodo.id); setMenuTodo(null); };
     return (<> {menuTodo && (<div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50" onClick={() => setMenuTodo(null)}><div className="bg-gray-800 border border-gray-600 rounded-lg p-6 w-full max-w-xs space-y-4" onClick={e => e.stopPropagation()}><p className="text-lg font-semibold text-white text-center">"{menuTodo.text}"</p><div className="flex flex-col space-y-3"><button onClick={handleEditClick} className="w-full text-left px-4 py-2.5 text-sm bg-gray-700 hover:bg-gray-600 rounded-md flex items-center gap-3 transition-colors"><Edit size={16}/> 수정하기</button><button onClick={handleDeleteClick} className="w-full text-left px-4 py-2.5 text-sm text-red-400 bg-red-900/50 hover:bg-red-900/80 rounded-md flex items-center gap-3 transition-colors"><Trash2 size={16}/> 삭제하기</button></div></div></div>)} <div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700"><h2 className="text-lg font-semibold mb-4 text-white flex items-center"><Activity size={20} className="mr-2" />금일 주요 활동</h2><div className="space-y-2 max-h-56 overflow-y-auto pr-2">{todoList.map(item => (<div key={item.id} className="flex items-center gap-3 text-sm group"> {editingTodo?.id === item.id ? (<><input type="time" id={`edit-time-${item.id}`} defaultValue={item.time} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-auto" /><input type="text" id={`edit-text-${item.id}`} defaultValue={item.text} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm flex-grow" /><button onClick={() => handleSave(item.id)} className="p-1 text-green-400 hover:text-green-300"><Save size={16}/></button><button onClick={() => setEditingTodo(null)} className="p-1 text-gray-400 hover:text-white"><X size={16}/></button></>) : (<><span className="font-semibold text-cyan-400">{item.time}</span><span className="flex-grow">{item.text}</span><span className="text-xs bg-gray-700 px-2 py-0.5 rounded-full">{item.tag}</span><button onClick={() => setMenuTodo(item)} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-white"><MoreVertical size={16}/></button></>)}</div>))}</div><div className="flex gap-2 mt-2"><input type="time" defaultValue="12:00" className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-auto" id="todoTime" /><input type="text" placeholder="활동 내용" className="bg-gray-900 border border-gray-600 rounded p-1 text-sm flex-grow" id="todoText" /><button onClick={handleAdd} className="bg-blue-600 hover:bg-blue-700 rounded p-2"><Plus size={16} /></button></div></div></>);
 };
-const DashboardView = ({ profile, allForecastData, forecastStatus, logs, deleteLog, todoList, addTodo, updateTodo, deleteTodo }) => {
+const DashboardView = ({ profile, allForecastData, forecastStatus, logs, deleteLog, todoList, addTodo, updateTodo, deleteTodo, activeUnitThreshold, unitAutoThreshold }) => {
     const [selectedDate, setSelectedDate] = useState(null);
     const [expandedLogId, setExpandedLogId] = useState(null);
     const [animatingLogId, setAnimatingLogId] = useState(null); const [animationProgress, setAnimationProgress] = useState(0); const animationRef = useRef();
-    const unitAutoThreshold = useMemo(() => profile.equipment.length > 0 ? Math.min(...profile.equipment.map(eq => eq.thresholdMode === 'auto' && eq.autoThreshold ? eq.autoThreshold : eq.manualThreshold)) : 10.0, [profile.equipment]);
-    const activeUnitThreshold = profile.unitThresholdMode === 'auto' ? unitAutoThreshold : profile.unitManualThreshold;
+    
     const maxError = useMemo(() => {
         if (!allForecastData || allForecastData.length === 0) return 0;
         const now = new Date().getTime();
@@ -342,23 +362,24 @@ const ShapeIcon = ({ shape, color = "white" }) => {
         case 'circle': return <Circle {...props} fill={color} />;
         case 'triangle': return <Triangle {...props} fill={color} />;
         case 'square': return <Square {...props} fill={color} />;
-        case 'diamond': return <Square {...props} fill={color} className={`${props.className} rotate-45`}/>;
+        case 'diamond': return <Diamond {...props} fill={color} />;
+        case 'star': return <Star {...props} fill={color} />;
         default: return <Plus {...props} />;
     }
 };
 
-const AnalysisView = ({ logs, profile }) => {
+const AnalysisView = ({ logs, profile, activeUnitThreshold }) => {
     const [selectedEquipment, setSelectedEquipment] = useState('전체');
     const [pcaSelectedEquipment, setPcaSelectedEquipment] = useState('전체');
 
     const shapeMap = useMemo(() => {
-        const shapes = ['circle', 'triangle', 'square', 'diamond', 'cross', 'star', 'wye'];
+        const shapes = ['circle', 'triangle', 'square', 'diamond', 'star'];
         return profile.equipment.reduce((acc, eq, index) => {
             acc[eq.name] = shapes[index % shapes.length];
             return acc;
         }, {});
     }, [profile.equipment]);
-
+    
     const analysisData = useMemo(() => {
         if (logs.length === 0) return null;
 
@@ -385,29 +406,36 @@ const AnalysisView = ({ logs, profile }) => {
         }).sort((a,b) => b.count - a.count);
         
         const logsForThreshold = (selectedEquipment === '전체' ? logs : logs.filter(l => l.equipment === selectedEquipment)).filter(l => l.gnssErrorData);
-        const thresholdAnalysis = { data: [], autoThreshold: null };
+        const thresholdAnalysis = { data: [], auto: null, manual: null, mode: 'auto' };
+        if(selectedEquipment !== '전체') {
+            const eqProfile = profile.equipment.find(e => e.name === selectedEquipment);
+            if(eqProfile) {
+                thresholdAnalysis.mode = eqProfile.thresholdMode;
+                thresholdAnalysis.manual = eqProfile.manualThreshold;
+            }
+        }
         thresholdAnalysis.data = logsForThreshold.map(log => ({ successScore: log.successScore, maxError: Math.max(...log.gnssErrorData.map(d => d.error_rate)), equipment: log.equipment, startTime: log.startTime, endTime: log.endTime }));
         const errRatesOnFailure = logsForThreshold.filter(l => l.successScore < 8).flatMap(l => l.gnssErrorData.map(d => d.error_rate));
         if (errRatesOnFailure.length >= 3) {
             const p75 = [...errRatesOnFailure].sort((a, b) => a - b)[Math.floor(errRatesOnFailure.length * 0.75)];
-            thresholdAnalysis.autoThreshold = p75;
+            thresholdAnalysis.auto = p75;
         }
-        
+
         let logsForPca = (pcaSelectedEquipment === '전체' ? logs : logs.filter(l => l.equipment === pcaSelectedEquipment)).filter(l => l.gnssErrorData);
         let pcaData = [];
         if (logsForPca.length > 2) {
             const allErrors = logsForPca.map(l => Math.max(...l.gnssErrorData.map(d => d.error_rate)));
             const avgMaxError = allErrors.reduce((a, b) => a + b, 0) / allErrors.length;
             const equipmentOffsets = profile.equipment.reduce((acc, eq, i) => {
-                acc[eq.name] = (i - (profile.equipment.length - 1) / 2) * 1.5;
+                acc[eq.name] = (i - (profile.equipment.length - 1) / 2) * 0.7;
                 return acc;
             }, {});
             pcaData = logsForPca.map(log => {
                 const maxError = Math.max(...log.gnssErrorData.map(d => d.error_rate));
-                const base_pc1 = (maxError - avgMaxError) * 0.4;
+                const base_pc1 = (maxError - avgMaxError) * 0.2;
                 const base_pc2 = equipmentOffsets[log.equipment] || 0;
-                const noise_x = (Math.random() - 0.5) * 3;
-                const noise_y = (Math.random() - 0.5) * 3;
+                const noise_x = (Math.random() - 0.5) * 1.5;
+                const noise_y = (Math.random() - 0.5) * 1.5;
                 return { pc1: base_pc1 + noise_x, pc2: base_pc2 + noise_y, successScore: log.successScore, equipment: log.equipment, maxError: maxError, startTime: log.startTime, endTime: log.endTime };
             });
         }
@@ -443,7 +471,7 @@ const AnalysisView = ({ logs, profile }) => {
                             {profile.equipment.map(eq => <option key={eq.id} value={eq.name}>{eq.name}</option>)}
                         </select>
                     </div>
-                    <ResponsiveContainer width="100%" height={350}>
+                    <ResponsiveContainer width="100%" height={400}>
                         <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 0 }}>
                             <CartesianGrid stroke="#4A5568" strokeDasharray="3 3"/>
                             <XAxis type="number" dataKey="successScore" name="성공 점수" unit="점" stroke="#A0AEC0" domain={[0, 10]}/>
@@ -453,7 +481,10 @@ const AnalysisView = ({ logs, profile }) => {
                             <Scatter name="성공" data={thresholdAnalysis.data.filter(d => d.successScore >= 8)} fill="#4ade80" />
                             <Scatter name="보통" data={thresholdAnalysis.data.filter(d => d.successScore >= 4 && d.successScore < 8)} fill="#facc15" />
                             <Scatter name="실패" data={thresholdAnalysis.data.filter(d => d.successScore < 4)} fill="#f87171" />
-                            {thresholdAnalysis.autoThreshold != null && ( <ReferenceLine y={thresholdAnalysis.autoThreshold} stroke="#60a5fa" strokeDasharray="4 4" label={{ value: `자동 임계값 (${thresholdAnalysis.autoThreshold.toFixed(1)}m)`, position: 'insideTopLeft', fill: '#60a5fa' }} /> )}
+                            {selectedEquipment === '전체' && <ReferenceLine y={activeUnitThreshold} stroke="#fb923c" strokeDasharray="4 4" label={{ value: `부대 종합 임계값 (${activeUnitThreshold.toFixed(1)}m)`, position: 'insideTopLeft', fill: '#fb923c' }} /> }
+                            {selectedEquipment !== '전체' && thresholdAnalysis.mode === 'auto' && thresholdAnalysis.auto && <ReferenceLine y={thresholdAnalysis.auto} stroke="#60a5fa" strokeDasharray="4 4" label={{ value: `자동 임계값 (${thresholdAnalysis.auto.toFixed(1)}m)`, position: 'insideTopLeft', fill: '#60a5fa' }} /> }
+                            {selectedEquipment !== '전체' && thresholdAnalysis.mode === 'manual' && thresholdAnalysis.manual && <ReferenceLine y={thresholdAnalysis.manual} stroke="#f87171" label={{ value: `수동 임계값 (${thresholdAnalysis.manual.toFixed(1)}m)`, position: 'top', fill: '#f87171' }} /> }
+                            {selectedEquipment !== '전체' && thresholdAnalysis.mode === 'manual' && thresholdAnalysis.auto && <ReferenceLine y={thresholdAnalysis.auto} stroke="#60a5fa" strokeDasharray="4 4" label={{ value: `자동 (${thresholdAnalysis.auto.toFixed(1)}m)`, position: 'insideTopLeft', fill: '#60a5fa' }} /> }
                         </ScatterChart>
                     </ResponsiveContainer>
                 </div>
@@ -466,14 +497,14 @@ const AnalysisView = ({ logs, profile }) => {
                            {profile.equipment.map(eq => <option key={eq.id} value={eq.name}>{eq.name}</option>)}
                         </select>
                     </div>
-                    <ResponsiveContainer width="100%" height={350}>
+                    <ResponsiveContainer width="100%" height={400}>
                         {Object.keys(pcaDataByEquipment).length > 0 ? (
                             <ScatterChart margin={{ top: 20, right: 30, bottom: 20, left: 20 }}>
                                 <CartesianGrid stroke="#4A5568" strokeDasharray="3 3"/>
-                                <XAxis type="number" dataKey="pc1" stroke="#A0AEC0" tickFormatter={(v) => v.toFixed(1)}>
+                                <XAxis type="number" dataKey="pc1" domain={[-5, 5]} stroke="#A0AEC0" tickFormatter={(v) => v.toFixed(1)}>
                                      <Label value="PC1 (GNSS 오차 기반, 44.3%)" offset={-15} position="insideBottom" fill="#A0AEC0"/>
                                 </XAxis>
-                                <YAxis type="number" dataKey="pc2" stroke="#A0AEC0" tickFormatter={(v) => v.toFixed(1)}>
+                                <YAxis type="number" dataKey="pc2" domain={[-3, 3]} stroke="#A0AEC0" tickFormatter={(v) => v.toFixed(1)}>
                                      <Label value="PC2 (장비 특성 기반, 19.2%)" angle={-90} offset={0} position="insideLeft" fill="#A0AEC0" style={{ textAnchor: 'middle' }}/>
                                 </YAxis>
                                 <Tooltip content={<CustomScatterTooltip />} cursor={{ strokeDasharray: '3 3' }} />
