@@ -95,17 +95,24 @@ export default function App() {
       fetch(FETCH_URL)
           .then(response => { if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`); return response.text(); })
           .then(csvText => {
-              const lines = csvText.trim().split('\n').filter(line => line);
-              if (lines.length < 1) return [];
-              const headers = ["time", "gnss_error", "tec"];
-              const parsedData = lines.map(line => {
-                  const values = line.split(',').map(v => v.trim());
+              const lines = csvText.trim().split('\n');
+              if (lines.length < 2) throw new Error('CSV data is empty or has no content.');
+              
+              const headers = lines[0].trim().split(',').map(h => h.trim());
+              const parsedData = lines.slice(1).map(line => {
+                  const values = line.split(',');
                   return headers.reduce((obj, header, index) => {
-                      obj[header] = values[index];
+                      const value = values[index] ? values[index].trim() : '';
+                      if (header === 'datetime') {
+                          obj.timestamp = new Date(value).getTime();
+                      } else {
+                          obj[header] = parseFloat(value) || 0;
+                      }
                       return obj;
                   }, {});
               });
-              const formattedData = parsedData.map(d => ({ timestamp: new Date(d.time).getTime(), predicted_error: parseFloat(d.gnss_error) || 0, tec: parseFloat(d.tec) || 0 })) .filter(d => !isNaN(d.timestamp)).sort((a, b) => a.timestamp - b.timestamp);
+              
+              const formattedData = parsedData.filter(d => !isNaN(d.timestamp)).sort((a, b) => a.timestamp - b.timestamp);
               setAllForecastData(formattedData);
               setForecastStatus({ isLoading: false, error: null });
           })
@@ -136,7 +143,7 @@ export default function App() {
       case 'feedback': return <FeedbackView equipmentList={activeProfile.equipment} onSubmit={handleFeedbackSubmit} goBack={() => setActiveView('dashboard')} />;
       case 'dev': return <DeveloperTestView setLogs={setMissionLogs} profile={activeProfile} goBack={() => setActiveView('dashboard')} />;
       case 'analysis': return <AnalysisView logs={missionLogs} profile={activeProfile} activeUnitThreshold={activeUnitThreshold} />;
-      default: return <DashboardView profile={activeProfile} allForecastData={allForecastData} forecastStatus={forecastStatus} logs={missionLogs} deleteLog={deleteLog} todoList={todoList} addTodo={addTodo} updateTodo={updateTodo} deleteTodo={deleteTodo} activeUnitThreshold={activeUnitThreshold} unitAutoThreshold={unitAutoThreshold} />;
+      default: return <DashboardView profile={activeProfile} allForecastData={allForecastData} forecastStatus={forecastStatus} logs={missionLogs} deleteLog={deleteLog} todoList={todoList} addTodo={addTodo} updateTodo={updateTodo} deleteTodo={deleteTodo} activeUnitThreshold={activeUnitThreshold} />;
     }
   };
 
@@ -186,7 +193,15 @@ const Header = ({ profile, setActiveView, activeView }) => {
 
 // --- Dashboard Sub-components ---
 const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold }) => {
-    const [visibleData, setVisibleData] = useState({ gnss: true, tec: true });
+    const dataKeys = {
+        fore_gnss: { name: '예측 GNSS', color: '#f87171', axis: 'left' },
+        real_gnss: { name: '실제 GNSS', color: '#fca5a5', axis: 'left' },
+        tec_value: { name: 'TEC', color: '#60a5fa', axis: 'right' },
+        xrsb:      { name: 'XRSB', color: '#a78bfa', axis: 'right' },
+        kp10:      { name: 'Kp10', color: '#facc15', axis: 'right' },
+        dst:       { name: 'Dst', color: '#4ade80', axis: 'right' },
+    };
+    const [visibleData, setVisibleData] = useState({ fore_gnss: true, real_gnss: false, tec_value: true, xrsb: false, kp10: false, dst: false });
     const [timeRange, setTimeRange] = useState({ start: null, end: null });
 
     useEffect(() => {
@@ -221,7 +236,7 @@ const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold })
 
     return (
         <div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700">
-            <h2 className="text-lg font-semibold mb-4 text-white">GNSS 오차 및 TEC 예측</h2>
+            <h2 className="text-lg font-semibold mb-4 text-white">GNSS 오차 및 우주기상 예측</h2>
             <div style={{width: '100%', height: 250}}>
                 {forecastStatus.isLoading ? <div className="flex items-center justify-center h-full text-gray-400">데이터 로딩 중...</div>
                  : forecastStatus.error ? <div className="flex items-center justify-center h-full text-red-400">{forecastStatus.error}</div>
@@ -231,26 +246,24 @@ const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold })
                         <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" />
                         <XAxis dataKey="timestamp" stroke="#A0AEC0" type="number" domain={[timeRange.start, timeRange.end]} ticks={niceTicks} tickFormatter={formatXAxis} />
                         <YAxis yAxisId="left" label={{ value: 'GNSS 오차(m)', angle: -90, position: 'insideLeft', fill: '#A0AEC0' }} stroke="#F56565" />
-                        <YAxis yAxisId="right" orientation="right" label={{ value: 'TEC (TECU)', angle: 90, position: 'insideRight', fill: '#A0AEC0' }} stroke="#4299E1" />
-                        <Tooltip contentStyle={{ backgroundColor: '#1A202C' }} labelFormatter={(unixTime) => formatDate(unixTime)} />
+                        <YAxis yAxisId="right" orientation="right" label={{ value: '우주기상 지수', angle: 90, position: 'insideRight', fill: '#A0AEC0' }} stroke="#A0AEC0" />
+                        <Tooltip contentStyle={{ backgroundColor: '#1A202C' }} labelFormatter={(unixTime) => formatDate(unixTime, 'full')} />
                         <Legend />
-                        {visibleData.gnss && <Line yAxisId="left" type="monotone" dataKey="predicted_error" name="GNSS 오차" stroke="#F56565" dot={false} />}
-                        {visibleData.tec && <Line yAxisId="right" type="monotone" dataKey="tec" name="TEC" stroke="#4299E1" dot={false} />}
-                        {visibleData.gnss && <ReferenceLine yAxisId="left" y={activeUnitThreshold} label={{ value: "부대 임계값", fill: "#4FD1C5" }} stroke="#4FD1C5" strokeDasharray="4 4" />}
+                        {Object.entries(dataKeys).map(([key, { name, color, axis }]) => (
+                             visibleData[key] && <Line key={key} yAxisId={axis} type="monotone" dataKey={key} name={name} stroke={color} dot={false} />
+                        ))}
+                        {visibleData['fore_gnss'] && <ReferenceLine yAxisId="left" y={activeUnitThreshold} label={{ value: "부대 임계값", fill: "#4FD1C5" }} stroke="#4FD1C5" strokeDasharray="4 4" />}
                         {isNowInRange && <ReferenceLine yAxisId="left" x={nowTimestamp} stroke="#fbbf24" strokeWidth={2} label={{ value: '현재', position: 'insideTop', fill: '#fbbf24' }} />}
                     </LineChart>
                   </ResponsiveContainer>)}
             </div>
-            <div className="flex flex-col md:flex-row justify-between items-center mt-4 pt-4 border-t border-gray-700 gap-4">
-                <div className="flex items-center gap-4">
-                    <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-300"><input type="checkbox" checked={visibleData.gnss} onChange={e => setVisibleData(v => ({...v, gnss: e.target.checked}))} className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-red-500 focus:ring-red-500 rounded" /> GNSS 오차</label>
-                    <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-300"><input type="checkbox" checked={visibleData.tec} onChange={e => setVisibleData(v => ({...v, tec: e.target.checked}))} className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-500 rounded" /> TEC</label>
-                </div>
-                {timeRange.start && <div className="flex items-center gap-2 w-full md:w-auto">
-                    <input type="datetime-local" value={toLocalISOString(new Date(timeRange.start))} onChange={e => setTimeRange(r => ({...r, start: new Date(e.target.value).getTime()}))} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-full"/>
-                    <span className="text-gray-400">-</span>
-                    <input type="datetime-local" value={toLocalISOString(new Date(timeRange.end))} onChange={e => setTimeRange(r => ({...r, end: new Date(e.target.value).getTime()}))} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-full"/>
-                </div>}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-x-4 gap-y-2 mt-4 pt-4 border-t border-gray-700">
+                {Object.entries(dataKeys).map(([key, {name}]) => (
+                    <label key={key} className="flex items-center gap-2 cursor-pointer text-sm text-gray-300">
+                        <input type="checkbox" checked={visibleData[key]} onChange={e => setVisibleData(v => ({...v, [key]: e.target.checked}))} className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-500 rounded" /> 
+                        {name}
+                    </label>
+                ))}
             </div>
         </div>
     );
@@ -259,18 +272,9 @@ const LiveMap = ({threshold, center}) => {
     const koreaBounds = { minLat: 33.0, maxLat: 38.5, minLon: 125.0, maxLon: 130.0 };
     const [aircrafts, setAircrafts] = useState(() => Array.from({ length: 20 }).map((_, i) => ({
         id: i,
-        p0: [
-            koreaBounds.minLat + Math.random() * (koreaBounds.maxLat - koreaBounds.minLat),
-            koreaBounds.minLon + Math.random() * (koreaBounds.maxLon - koreaBounds.minLon)
-        ],
-        p1: [
-            koreaBounds.minLat + Math.random() * (koreaBounds.maxLat - koreaBounds.minLat),
-            koreaBounds.minLon + Math.random() * (koreaBounds.maxLon - koreaBounds.minLon)
-        ],
-        p2: [
-            koreaBounds.minLat + Math.random() * (koreaBounds.maxLat - koreaBounds.minLat),
-            koreaBounds.minLon + Math.random() * (koreaBounds.maxLon - koreaBounds.minLon)
-        ],
+        p0: [ koreaBounds.minLat + Math.random() * (koreaBounds.maxLat - koreaBounds.minLat), koreaBounds.minLon + Math.random() * (koreaBounds.maxLon - koreaBounds.minLon) ],
+        p1: [ koreaBounds.minLat + Math.random() * (koreaBounds.maxLat - koreaBounds.minLat), koreaBounds.minLon + Math.random() * (koreaBounds.maxLon - koreaBounds.minLon) ],
+        p2: [ koreaBounds.minLat + Math.random() * (koreaBounds.maxLat - koreaBounds.minLat), koreaBounds.minLon + Math.random() * (koreaBounds.maxLon - koreaBounds.minLon) ],
         progress: Math.random(),
         speed: 0.003 + Math.random() * 0.005,
         error: 5 + Math.random() * 5
@@ -278,7 +282,7 @@ const LiveMap = ({threshold, center}) => {
 
     useEffect(() => { const timer = setInterval(() => setAircrafts(prev => prev.map(ac => ({ ...ac, progress: (ac.progress + ac.speed) % 1, error: Math.max(3.0, ac.error + (Math.random() - 0.5) * 2) }))), 2000); return () => clearInterval(timer); }, []);
     
-    return (<div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700 h-96"><h2 className="text-lg font-semibold mb-4 text-white">실시간 항적 (한반도 전역)</h2><MapContainer key={center.lat + "-" + center.lon} center={[36.0, 127.5]} zoom={7} style={{ height: "calc(100% - 40px)", width: "100%", borderRadius: "0.75rem", backgroundColor: "#333" }}> <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; CARTO' /> {aircrafts.map(ac => { let pos = getPointOnBezierCurve(ac.progress, ac.p0, ac.p1, ac.p2); return (<CircleMarker key={ac.id} center={pos} radius={6} pathOptions={{ color: getErrorColor(ac.error, threshold), fillColor: getErrorColor(ac.error, threshold), fillOpacity: 0.8 }}><LeafletTooltip>✈️ ID: {ac.id}<br />GNSS 오차: {ac.error.toFixed(2)}m</LeafletTooltip></CircleMarker>); })} </MapContainer> </div>);
+    return (<div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700 h-96"><h2 className="text-lg font-semibold mb-4 text-white">실시간 항적 (한반도 전역)</h2><MapContainer key={center.lat + "-" + center.lon} center={[center.lat, center.lon]} zoom={9} style={{ height: "calc(100% - 40px)", width: "100%", borderRadius: "0.75rem", backgroundColor: "#333" }}> <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; CARTO' /> {aircrafts.map(ac => { let pos = getPointOnBezierCurve(ac.progress, ac.p0, ac.p1, ac.p2); return (<CircleMarker key={ac.id} center={pos} radius={6} pathOptions={{ color: getErrorColor(ac.error, threshold), fillColor: getErrorColor(ac.error, threshold), fillOpacity: 0.8 }}><LeafletTooltip>✈️ ID: {ac.id}<br />GNSS 오차: {ac.error.toFixed(2)}m</LeafletTooltip></CircleMarker>); })} </MapContainer> </div>);
 };
 const AutoFitBounds = ({ bounds }) => { const map = useMap(); useEffect(() => { if (bounds) map.fitBounds(bounds, { padding: [20, 20] }); }, [bounds, map]); return null; };
 const FeedbackChart = ({ data, equipment }) => { const activeThreshold = equipment.thresholdMode === 'auto' && equipment.autoThreshold ? equipment.autoThreshold : equipment.manualThreshold; const segments = useMemo(() => { const segs = []; let cur = null; data.forEach(d => { if (d.error_rate > activeThreshold) { if (!cur) cur = { x1: d.date, x2: d.date }; else cur.x2 = d.date; } else { if (cur) { segs.push(cur); cur = null; } } }); if (cur) segs.push(cur); return segs; }, [data, activeThreshold]); return (<div className="mt-4 h-40"><ResponsiveContainer width="100%" height="100%"><LineChart data={data} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}> <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" /><XAxis dataKey="date" stroke="#A0AEC0" tick={{ fontSize: 10 }} tickFormatter={(tick) => formatDate(tick, 'time')} /> <YAxis stroke="#A0AEC0" tick={{ fontSize: 10 }} domain={[0, 'dataMax + 2']} tickFormatter={(tick) => tick.toFixed(1)} /> <Tooltip contentStyle={{ backgroundColor: '#1A202C' }} labelFormatter={(label) => formatDate(label)} /> <Line type="monotone" dataKey="error_rate" name="GNSS 오차(m)" stroke="#F56565" strokeWidth={2} dot={false} /> {segments.map((seg, i) => <ReferenceArea key={i} x1={seg.x1} x2={seg.x2} stroke="none" fill="#f56565" fillOpacity={0.3} />)} <ReferenceLine y={activeThreshold} label={{ value: "임계값", position: 'insideTopLeft', fill: '#4FD1C5', fontSize: 10 }} stroke="#4FD1C5" strokeDasharray="3 3" /> </LineChart></ResponsiveContainer></div>); };
@@ -288,7 +292,7 @@ const TodoList = ({ todoList, addTodo, updateTodo, deleteTodo }) => {
     const [editingTodo, setEditingTodo] = useState(null); const [menuTodo, setMenuTodo] = useState(null); const handleAdd = () => { const time = document.getElementById('todoTime').value; const text = document.getElementById('todoText').value; if(text) { addTodo({time, text, tag: 'Briefing'}); document.getElementById('todoText').value = ''; } }; const handleSave = (id) => { const time = document.getElementById(`edit-time-${id}`).value; const text = document.getElementById(`edit-text-${id}`).value; updateTodo({ ...editingTodo, time, text }); setEditingTodo(null); }; const handleEditClick = () => { setEditingTodo(menuTodo); setMenuTodo(null); }; const handleDeleteClick = () => { deleteTodo(menuTodo.id); setMenuTodo(null); };
     return (<> {menuTodo && (<div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50" onClick={() => setMenuTodo(null)}><div className="bg-gray-800 border border-gray-600 rounded-lg p-6 w-full max-w-xs space-y-4" onClick={e => e.stopPropagation()}><p className="text-lg font-semibold text-white text-center">"{menuTodo.text}"</p><div className="flex flex-col space-y-3"><button onClick={handleEditClick} className="w-full text-left px-4 py-2.5 text-sm bg-gray-700 hover:bg-gray-600 rounded-md flex items-center gap-3 transition-colors"><Edit size={16}/> 수정하기</button><button onClick={handleDeleteClick} className="w-full text-left px-4 py-2.5 text-sm text-red-400 bg-red-900/50 hover:bg-red-900/80 rounded-md flex items-center gap-3 transition-colors"><Trash2 size={16}/> 삭제하기</button></div></div></div>)} <div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700"><h2 className="text-lg font-semibold mb-4 text-white flex items-center"><Activity size={20} className="mr-2" />금일 주요 활동</h2><div className="space-y-2 max-h-56 overflow-y-auto pr-2">{todoList.map(item => (<div key={item.id} className="flex items-center gap-3 text-sm group"> {editingTodo?.id === item.id ? (<><input type="time" id={`edit-time-${item.id}`} defaultValue={item.time} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-auto" /><input type="text" id={`edit-text-${item.id}`} defaultValue={item.text} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm flex-grow" /><button onClick={() => handleSave(item.id)} className="p-1 text-green-400 hover:text-green-300"><Save size={16}/></button><button onClick={() => setEditingTodo(null)} className="p-1 text-gray-400 hover:text-white"><X size={16}/></button></>) : (<><span className="font-semibold text-cyan-400">{item.time}</span><span className="flex-grow">{item.text}</span><span className="text-xs bg-gray-700 px-2 py-0.5 rounded-full">{item.tag}</span><button onClick={() => setMenuTodo(item)} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-white"><MoreVertical size={16}/></button></>)}</div>))}</div><div className="flex gap-2 mt-2"><input type="time" defaultValue="12:00" className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-auto" id="todoTime" /><input type="text" placeholder="활동 내용" className="bg-gray-900 border border-gray-600 rounded p-1 text-sm flex-grow" id="todoText" /><button onClick={handleAdd} className="bg-blue-600 hover:bg-blue-700 rounded p-2"><Plus size={16} /></button></div></div></>);
 };
-const DashboardView = ({ profile, allForecastData, forecastStatus, logs, deleteLog, todoList, addTodo, updateTodo, deleteTodo, activeUnitThreshold, unitAutoThreshold }) => {
+const DashboardView = ({ profile, allForecastData, forecastStatus, logs, deleteLog, todoList, addTodo, updateTodo, deleteTodo, activeUnitThreshold }) => {
     const [selectedDate, setSelectedDate] = useState(null);
     const [expandedLogId, setExpandedLogId] = useState(null);
     const [animatingLogId, setAnimatingLogId] = useState(null); const [animationProgress, setAnimationProgress] = useState(0); const animationRef = useRef();
@@ -298,7 +302,7 @@ const DashboardView = ({ profile, allForecastData, forecastStatus, logs, deleteL
         const now = new Date().getTime();
         const next24h = now + 24 * 3600 * 1000;
         const relevantData = allForecastData.filter(d => d.timestamp >= now && d.timestamp <= next24h);
-        return relevantData.length > 0 ? Math.max(...relevantData.map(d => d.predicted_error)) : 0;
+        return relevantData.length > 0 ? Math.max(...relevantData.map(d => d.fore_gnss)) : 0;
     }, [allForecastData]);
     const overallStatus = useMemo(() => { if (maxError > activeUnitThreshold) return { label: "위험", color: "text-red-400", bgColor: "bg-red-900/50" }; if (maxError > activeUnitThreshold * 0.7) return { label: "주의", color: "text-yellow-400", bgColor: "bg-yellow-900/50" }; return { label: "정상", color: "text-green-400", bgColor: "bg-green-900/50" }; }, [maxError, activeUnitThreshold]);
     const logsByDate = useMemo(() => { const grouped = {}; logs.forEach(log => { const key = formatDateKey(log.startTime); if (!grouped[key]) grouped[key] = []; grouped[key].push(log); }); return grouped; }, [logs]);
@@ -357,14 +361,15 @@ const CustomScatterTooltip = ({ active, payload }) => {
 const StatCard = ({ title, value, icon, color }) => (<div className="bg-gray-800 p-4 rounded-xl flex items-center gap-4 border border-gray-700"><div className={`p-3 rounded-lg bg-${color}-500/20 text-${color}-400`}>{icon}</div><div><p className="text-gray-400 text-sm">{title}</p><p className="text-2xl font-bold text-white">{value}</p></div></div>);
 
 const ShapeIcon = ({ shape, color = "white" }) => {
-    const props = { size: 14, className: `text-${color}` };
+    const props = { size: 14, className: `text-${color} stroke-current`, strokeWidth: 2 };
     switch(shape) {
         case 'circle': return <Circle {...props} fill={color} />;
         case 'triangle': return <Triangle {...props} fill={color} />;
         case 'square': return <Square {...props} fill={color} />;
         case 'diamond': return <Diamond {...props} fill={color} />;
         case 'star': return <Star {...props} fill={color} />;
-        default: return <Plus {...props} />;
+        case 'cross': return <Plus {...props} />;
+        default: return <Circle {...props} fill={color} />;
     }
 };
 
@@ -373,7 +378,7 @@ const AnalysisView = ({ logs, profile, activeUnitThreshold }) => {
     const [pcaSelectedEquipment, setPcaSelectedEquipment] = useState('전체');
 
     const shapeMap = useMemo(() => {
-        const shapes = ['circle', 'triangle', 'square', 'diamond', 'star'];
+        const shapes = ['circle', 'triangle', 'square', 'diamond', 'star', 'cross'];
         return profile.equipment.reduce((acc, eq, index) => {
             acc[eq.name] = shapes[index % shapes.length];
             return acc;
@@ -427,15 +432,18 @@ const AnalysisView = ({ logs, profile, activeUnitThreshold }) => {
             const allErrors = logsForPca.map(l => Math.max(...l.gnssErrorData.map(d => d.error_rate)));
             const avgMaxError = allErrors.reduce((a, b) => a + b, 0) / allErrors.length;
             const equipmentOffsets = profile.equipment.reduce((acc, eq, i) => {
-                acc[eq.name] = (i - (profile.equipment.length - 1) / 2) * 0.7;
+                acc[eq.name] = (i - (profile.equipment.length - 1) / 2) * 0.15;
                 return acc;
             }, {});
+
             pcaData = logsForPca.map(log => {
                 const maxError = Math.max(...log.gnssErrorData.map(d => d.error_rate));
-                const base_pc1 = (maxError - avgMaxError) * 0.2;
+                const base_pc1 = (maxError - avgMaxError) * 0.05;
                 const base_pc2 = equipmentOffsets[log.equipment] || 0;
-                const noise_x = (Math.random() - 0.5) * 1.5;
-                const noise_y = (Math.random() - 0.5) * 1.5;
+                
+                const noise_x = (Math.random() - 0.5) * 0.2;
+                const noise_y = (Math.random() - 0.5) * 0.2;
+                
                 return { pc1: base_pc1 + noise_x, pc2: base_pc2 + noise_y, successScore: log.successScore, equipment: log.equipment, maxError: maxError, startTime: log.startTime, endTime: log.endTime };
             });
         }
@@ -501,11 +509,11 @@ const AnalysisView = ({ logs, profile, activeUnitThreshold }) => {
                         {Object.keys(pcaDataByEquipment).length > 0 ? (
                             <ScatterChart margin={{ top: 20, right: 30, bottom: 20, left: 20 }}>
                                 <CartesianGrid stroke="#4A5568" strokeDasharray="3 3"/>
-                                <XAxis type="number" dataKey="pc1" domain={[-5, 5]} stroke="#A0AEC0" tickFormatter={(v) => v.toFixed(1)}>
-                                     <Label value="PC1 (GNSS 오차 기반, 44.3%)" offset={-15} position="insideBottom" fill="#A0AEC0"/>
+                                <XAxis type="number" dataKey="pc1" domain={[-0.5, 0.5]} stroke="#A0AEC0" tickFormatter={(v) => v.toFixed(1)}>
+                                     <Label value="PC1 (44.3%)" offset={-15} position="insideBottom" fill="#A0AEC0"/>
                                 </XAxis>
-                                <YAxis type="number" dataKey="pc2" domain={[-3, 3]} stroke="#A0AEC0" tickFormatter={(v) => v.toFixed(1)}>
-                                     <Label value="PC2 (장비 특성 기반, 19.2%)" angle={-90} offset={0} position="insideLeft" fill="#A0AEC0" style={{ textAnchor: 'middle' }}/>
+                                <YAxis type="number" dataKey="pc2" domain={[-0.3, 0.3]} stroke="#A0AEC0" tickFormatter={(v) => v.toFixed(1)}>
+                                     <Label value="PC2 (19.2%)" angle={-90} offset={0} position="insideLeft" fill="#A0AEC0" style={{ textAnchor: 'middle' }}/>
                                 </YAxis>
                                 <Tooltip content={<CustomScatterTooltip />} cursor={{ strokeDasharray: '3 3' }} />
                                 {Object.entries(pcaDataByEquipment).map(([eqName, eqData]) => (
