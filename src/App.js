@@ -323,7 +323,7 @@ const AnalysisView = ({ logs, profile, allForecastData }) => {
                 maxError: Math.max(...log.gnssErrorData.map(d => d.error_rate)),
                 equipment: log.equipment
             }));
-            const- errRatesOnFailure = equipmentLogs.filter(l => l.successScore < 8).flatMap(l => l.gnssErrorData.map(d => d.error_rate));
+            const errRatesOnFailure = equipmentLogs.filter(l => l.successScore < 8).flatMap(l => l.gnssErrorData.map(d => d.error_rate));
             if (errRatesOnFailure.length >= 3) {
                 const p75 = [...errRatesOnFailure].sort((a, b) => a - b)[Math.floor(errRatesOnFailure.length * 0.75)];
                 thresholdAnalysis.autoThreshold = p75;
