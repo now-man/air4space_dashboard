@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceArea, BarChart, Bar, ScatterChart, Scatter, ZAxis, Cell } from 'recharts';
 import { DayPicker } from 'react-day-picker';
 import { ko } from 'date-fns/locale';
-import { Zap, Settings, ShieldAlert, BotMessageSquare, Plus, Trash2, Save, ArrowLeft, UploadCloud, TestTube2, BrainCircuit, Eraser, Lightbulb, RefreshCw, PlayCircle, MapPin, Edit3, Compass, Activity, Calendar as CalendarIcon, MoreVertical, X, Edit, Home, BarChart3, Target, PlusCircle, Pencil } from 'lucide-react';
+import { Zap, Settings, ShieldAlert, BotMessageSquare, Plus, Trash2, Save, ArrowLeft, UploadCloud, TestTube2, BrainCircuit, Eraser, Lightbulb, RefreshCw, PlayCircle, MapPin, Edit3, Compass, Activity, Calendar as CalendarIcon, MoreVertical, X, Edit, Home, BarChart3, Target, PlusCircle, Pencil, Square, Circle, Triangle } from 'lucide-react';
 import { MapContainer, TileLayer, CircleMarker, Tooltip as LeafletTooltip, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'react-day-picker/dist/style.css';
@@ -16,6 +16,7 @@ const getPointOnBezierCurve = (t, p0, p1, p2) => { const [x0, y0] = p0; const [x
 const formatDateKey = (d) => { if(!d) return null; d = new Date(d); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
 const generateNiceTicks = (startTime, endTime) => {
+    if (!startTime || !endTime) return [];
     const duration = endTime - startTime;
     const ticks = [];
     let interval, startPoint;
@@ -24,7 +25,7 @@ const generateNiceTicks = (startTime, endTime) => {
         interval = 6 * 3600 * 1000; // 6 hours
         startPoint = new Date(startTime);
         startPoint.setMinutes(0, 0, 0);
-        startPoint.setHours(startPoint.getHours() + 1);
+        startPoint.setHours(startPoint.getHours());
     } else if (duration <= 10 * 24 * 3600 * 1000) { // Less than 10 days -> daily ticks
         interval = 24 * 3600 * 1000; // 1 day
         startPoint = new Date(startTime);
@@ -36,8 +37,8 @@ const generateNiceTicks = (startTime, endTime) => {
     }
     
     let currentTick = startPoint.getTime();
-    while (currentTick < endTime) {
-        if (currentTick > startTime) {
+    while (currentTick < endTime + interval) {
+        if (currentTick >= startTime) {
             ticks.push(currentTick);
         }
         currentTick += interval;
@@ -69,11 +70,8 @@ export default function App() {
               const parsed = JSON.parse(saved);
               return parsed.length > 0 ? parsed : [createDefaultProfile(Date.now(), "제17전투비행단", 36.722701, 127.499102)];
           }
-      } catch (e) { /* fall through to default */ }
-      return [
-          createDefaultProfile(Date.now(), "제17전투비행단", 36.722701, 127.499102),
-          createDefaultProfile(Date.now() + 1, "제11전투비행단", 35.899526, 128.639791)
-      ];
+      } catch (e) { return [ createDefaultProfile(Date.now(), "제17전투비행단", 36.722701, 127.499102), createDefaultProfile(Date.now() + 1, "제11전투비행단", 35.899526, 128.639791) ]; }
+      return [ createDefaultProfile(Date.now(), "제17전투비행단", 36.722701, 127.499102), createDefaultProfile(Date.now() + 1, "제11전투비행단", 35.899526, 128.639791) ];
   });
 
   const [activeProfileId, setActiveProfileId] = useState(() => {
@@ -336,6 +334,17 @@ const CustomScatterTooltip = ({ active, payload }) => {
     return null;
 };
 const StatCard = ({ title, value, icon, color }) => (<div className="bg-gray-800 p-4 rounded-xl flex items-center gap-4 border border-gray-700"><div className={`p-3 rounded-lg bg-${color}-500/20 text-${color}-400`}>{icon}</div><div><p className="text-gray-400 text-sm">{title}</p><p className="text-2xl font-bold text-white">{value}</p></div></div>);
+
+const ShapeIcon = ({ shape, color = "white" }) => {
+    switch(shape) {
+        case 'circle': return <Circle size={14} fill={color} stroke="none"/>;
+        case 'triangle': return <Triangle size={14} fill={color} stroke="none"/>;
+        case 'square': return <Square size={14} fill={color} stroke="none"/>;
+        case 'diamond': return <Square size={14} fill={color} stroke="none" className="rotate-45"/>;
+        default: return <Plus size={14} stroke={color}/>
+    }
+}
+
 const AnalysisView = ({ logs, profile }) => {
     const [selectedEquipment, setSelectedEquipment] = useState(profile.equipment[0]?.name || '');
 
@@ -378,12 +387,29 @@ const AnalysisView = ({ logs, profile }) => {
         let pcaData = [];
         const logsForPca = logs.filter(l => l.gnssErrorData);
         if (logsForPca.length > 2) {
+            const generateClusterPoint = (centerX, centerY, spread) => {
+                const angle = Math.random() * 2 * Math.PI;
+                const radius = Math.sqrt(Math.random()) * spread;
+                return { x: centerX + radius * Math.cos(angle), y: centerY + radius * Math.sin(angle) };
+            };
+
             pcaData = logsForPca.map(log => {
-                let pc1, pc2; const score = log.successScore;
-                if (score >= 8) { pc1 = -1.5 + (Math.random() - 0.5) * 2.5; pc2 = -1.5 + (Math.random() - 0.5) * 2.5;
-                } else if (score < 4) { pc1 = 1.5 + (Math.random() - 0.5) * 2.5; pc2 = 1.5 + (Math.random() - 0.5) * 2.5;
-                } else { pc1 = (Math.random() - 0.5) * 4; pc2 = (Math.random() - 0.5) * 4; }
-                return { pc1, pc2, successScore: log.successScore, equipment: log.equipment, maxError: Math.max(...log.gnssErrorData.map(d => d.error_rate)), startTime: log.startTime, endTime: log.endTime };
+                let scoreCategory;
+                if (log.successScore >= 8) scoreCategory = 'success';
+                else if (log.successScore >= 4) scoreCategory = 'normal';
+                else scoreCategory = 'fail';
+
+                if (Math.random() < 0.1) { // 10% noise
+                    const categories = ['success', 'normal', 'fail'];
+                    scoreCategory = categories[Math.floor(Math.random() * categories.length)];
+                }
+                
+                let point;
+                if (scoreCategory === 'success') { point = generateClusterPoint(-1.5, -1.5, 1.8);
+                } else if (scoreCategory === 'fail') { point = generateClusterPoint(1.5, 1.5, 1.8);
+                } else { point = generateClusterPoint(0, 0, 2.5); }
+                
+                return { pc1: point.x, pc2: point.y, successScore: log.successScore, equipment: log.equipment, maxError: Math.max(...log.gnssErrorData.map(d => d.error_rate)), startTime: log.startTime, endTime: log.endTime };
             });
         }
         
@@ -432,6 +458,7 @@ const AnalysisView = ({ logs, profile }) => {
                         </ScatterChart>
                     </ResponsiveContainer>
                 </div>
+
                 <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
                     <h2 className="text-lg font-semibold text-white mb-4">가상 PCA 작전 요인 분석</h2>
                      <p className="text-xs text-gray-400 mb-4 -mt-2">작전 성공도에 따라 군집화된 가상 데이터를 표시합니다.</p>
@@ -442,15 +469,23 @@ const AnalysisView = ({ logs, profile }) => {
                                 <XAxis type="number" dataKey="pc1" name="가상 요인 1" stroke="#A0AEC0" tickFormatter={(v) => v.toFixed(1)} />
                                 <YAxis type="number" dataKey="pc2" name="가상 요인 2" stroke="#A0AEC0" tickFormatter={(v) => v.toFixed(1)} />
                                 <Tooltip content={<CustomScatterTooltip />} cursor={{ strokeDasharray: '3 3' }} />
-                                <Legend />
                                 {Object.entries(pcaDataByEquipment).map(([eqName, eqData]) => (
-                                    <Scatter key={eqName} name={eqName} data={eqData} shape={shapeMap[eqName] || 'wye'}>
+                                    <Scatter key={eqName} name={eqName} data={eqData} shape={shapeMap[eqName] || 'cross'}>
                                         {eqData.map((entry, index) => ( <Cell key={`cell-${index}`} fill={getColorByScore(entry.successScore)} /> ))}
                                     </Scatter>
                                 ))}
                             </ScatterChart>
-                        ) : <div className="flex items-center justify-center h-full text-gray-500">분석을 위한 데이터가 부족합니다. (로그 3개 이상 필요)</div>}
+                        ) : <div className="flex items-center justify-center h-full text-gray-500">분석을 위한 데이터가 부족합니다.</div>}
                     </ResponsiveContainer>
+                    <div className="flex flex-wrap justify-center items-center gap-x-6 gap-y-2 mt-4 text-xs text-gray-400">
+                        <div className="flex items-center gap-2"> <div className="w-3 h-3 rounded-full bg-green-500"/> <span>성공</span> </div>
+                        <div className="flex items-center gap-2"> <div className="w-3 h-3 rounded-full bg-yellow-500"/> <span>보통</span> </div>
+                        <div className="flex items-center gap-2"> <div className="w-3 h-3 rounded-full bg-red-500"/> <span>실패</span> </div>
+                         <div className="w-full h-px bg-gray-700 md:w-px md:h-4"></div>
+                        {Object.entries(shapeMap).map(([name, shape]) => (
+                            <div key={name} className="flex items-center gap-2"> <ShapeIcon shape={shape} color="white"/> <span>{name}</span></div>
+                        ))}
+                    </div>
                 </div>
                  <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
                     <h2 className="text-lg font-semibold text-white mb-4">시간대별 작전 성공률</h2>
