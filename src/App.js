@@ -110,7 +110,7 @@ export default function App() {
     switch (activeView) {
       case 'settings': return <SettingsView profiles={allProfiles} setProfiles={setAllProfiles} activeProfile={activeProfile} setActiveProfileId={setActiveProfileId} logs={missionLogs} goBack={() => setActiveView('dashboard')} createDefaultProfile={createDefaultProfile} />;
       case 'feedback': return <FeedbackView equipmentList={activeProfile.equipment} onSubmit={handleFeedbackSubmit} goBack={() => setActiveView('dashboard')} />;
-      case 'dev': return <DeveloperTestView setLogs={setLogs} profile={activeProfile} goBack={() => setActiveView('dashboard')} />;
+      case 'dev': return <DeveloperTestView setLogs={setMissionLogs} profile={activeProfile} goBack={() => setActiveView('dashboard')} />;
       case 'analysis': return <AnalysisView logs={missionLogs} profile={activeProfile} allForecastData={allForecastData} />;
       default: return <DashboardView profile={activeProfile} allForecastData={allForecastData} forecastStatus={forecastStatus} logs={missionLogs} deleteLog={deleteLog} todoList={todoList} addTodo={addTodo} updateTodo={updateTodo} deleteTodo={deleteTodo} />;
     }
