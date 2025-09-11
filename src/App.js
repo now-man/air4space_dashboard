@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceArea, BarChart, Bar, ScatterChart, Scatter, Cell, Label } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceArea, BarChart, Bar, ScatterChart, Scatter, ZAxis, Cell, Label } from 'recharts';
 import { DayPicker } from 'react-day-picker';
 import { ko } from 'date-fns/locale';
-import { Zap, Settings, ShieldAlert, BotMessageSquare, Plus, Trash2, Save, ArrowLeft, UploadCloud, TestTube2, BrainCircuit, Eraser, Lightbulb, RefreshCw, PlayCircle, MapPin, Edit3, Compass, Activity, Calendar as CalendarIcon, MoreVertical, X, Edit, Home, BarChart3, Target, PlusCircle, Pencil, Square, Circle, Triangle, Star, Diamond, Hexagon, Aperture } from 'lucide-react';
+import { Zap, Settings, ShieldAlert, BotMessageSquare, Plus, Trash2, Save, ArrowLeft, UploadCloud, TestTube2, BrainCircuit, Eraser, Lightbulb, RefreshCw, PlayCircle, MapPin, Edit3, Compass, Activity, Calendar as CalendarIcon, MoreVertical, X, Edit, Home, BarChart3, Target, PlusCircle, Pencil, Square, Circle, Triangle, Star, Diamond, Hexagon, Aperture, Search } from 'lucide-react';
 import { MapContainer, TileLayer, CircleMarker, Tooltip as LeafletTooltip, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'react-day-picker/dist/style.css';
@@ -192,7 +192,7 @@ const Header = ({ profile, setActiveView, activeView }) => {
 };
 
 // --- Dashboard Sub-components ---
-const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold }) => {
+const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold, recommendedRange }) => {
     const dataKeys = {
         fore_gnss: { name: '예측 GNSS', color: '#f87171', axis: 'left' },
         real_gnss: { name: '실제 GNSS', color: '#fca5a5', axis: 'left' },
@@ -215,9 +215,20 @@ const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold })
         }
     }, [allForecastData]);
 
-    const displayData = useMemo(() => {
+    const dataForChart = useMemo(() => {
         if (!allForecastData || !timeRange.start) return [];
-        return allForecastData.filter(d => d.timestamp >= timeRange.start && d.timestamp <= timeRange.end);
+        
+        const cutoffDate = new Date();
+        cutoffDate.setMinutes(cutoffDate.getMinutes() - 10);
+        cutoffDate.setMinutes(0, 0, 0);
+        const cutoffTimestamp = cutoffDate.getTime();
+
+        return allForecastData
+            .filter(d => d.timestamp >= timeRange.start && d.timestamp <= timeRange.end)
+            .map(d => ({
+                ...d,
+                real_gnss: d.timestamp > cutoffTimestamp ? null : d.real_gnss
+            }));
     }, [allForecastData, timeRange]);
 
     const nowTimestamp = new Date().getTime();
@@ -240,9 +251,9 @@ const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold })
             <div style={{width: '100%', height: 250}}>
                 {forecastStatus.isLoading ? <div className="flex items-center justify-center h-full text-gray-400">데이터 로딩 중...</div>
                  : forecastStatus.error ? <div className="flex items-center justify-center h-full text-red-400">{forecastStatus.error}</div>
-                 : displayData.length < 2 ? <div className="flex items-center justify-center h-full text-gray-400">표시할 데이터가 없습니다.</div>
+                 : dataForChart.length < 2 ? <div className="flex items-center justify-center h-full text-gray-400">표시할 데이터가 없습니다.</div>
                  : (<ResponsiveContainer width="100%" height="100%">
-                     <LineChart data={displayData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                     <LineChart data={dataForChart} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" />
                         <XAxis dataKey="timestamp" stroke="#A0AEC0" type="number" domain={[timeRange.start, timeRange.end]} ticks={niceTicks} tickFormatter={formatXAxis} />
                         <YAxis yAxisId="left" label={{ value: 'GNSS 오차(m)', angle: -90, position: 'insideLeft', fill: '#A0AEC0' }} stroke="#F56565" />
@@ -250,27 +261,21 @@ const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold })
                         <Tooltip contentStyle={{ backgroundColor: '#1A202C' }} labelFormatter={(unixTime) => formatDate(unixTime, 'full')} />
                         <Legend wrapperStyle={{fontSize: "12px"}}/>
                         {Object.entries(dataKeys).map(([key, { name, color, axis }]) => (
-                             visibleData[key] && <Line key={key} yAxisId={axis} type="monotone" dataKey={key} name={name} stroke={color} dot={false} />
+                             visibleData[key] && <Line key={key} yAxisId={axis} type="monotone" dataKey={key} name={name} stroke={color} dot={false} connectNulls />
                         ))}
                         {visibleData['fore_gnss'] && <ReferenceLine yAxisId="left" y={activeUnitThreshold} label={{ value: "부대 임계값", fill: "#4FD1C5" }} stroke="#4FD1C5" strokeDasharray="4 4" />}
                         {isNowInRange && <ReferenceLine yAxisId="left" x={nowTimestamp} stroke="#fbbf24" strokeWidth={2} label={{ value: '현재', position: 'insideTop', fill: '#fbbf24' }} />}
+                        {recommendedRange && <ReferenceArea yAxisId="left" x1={recommendedRange.start} x2={recommendedRange.end} stroke="#4ade80" strokeOpacity={0.6} fill="#4ade80" fillOpacity={0.2} />}
                     </LineChart>
                   </ResponsiveContainer>)}
             </div>
-            <div className="flex flex-col md:flex-row justify-between items-center mt-4 pt-4 border-t border-gray-700 gap-4">
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-x-4 gap-y-2 w-full">
-                    {Object.entries(dataKeys).map(([key, {name}]) => (
-                        <label key={key} className="flex items-center gap-2 cursor-pointer text-sm text-gray-300">
-                            <input type="checkbox" checked={visibleData[key]} onChange={e => setVisibleData(v => ({...v, [key]: e.target.checked}))} className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-500 rounded" /> 
-                            {name}
-                        </label>
-                    ))}
-                </div>
-                {timeRange.start && <div className="flex items-center gap-2 w-full md:w-auto pt-4 md:pt-0 border-t border-gray-700 md:border-none">
-                    <input type="datetime-local" value={toLocalISOString(new Date(timeRange.start))} onChange={e => setTimeRange(r => ({...r, start: new Date(e.target.value).getTime()}))} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-full"/>
-                    <span className="text-gray-400">-</span>
-                    <input type="datetime-local" value={toLocalISOString(new Date(timeRange.end))} onChange={e => setTimeRange(r => ({...r, end: new Date(e.target.value).getTime()}))} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-full"/>
-                </div>}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-x-4 gap-y-2 mt-4 pt-4 border-t border-gray-700">
+                {Object.entries(dataKeys).map(([key, {name}]) => (
+                    <label key={key} className="flex items-center gap-2 cursor-pointer text-sm text-gray-300">
+                        <input type="checkbox" checked={visibleData[key]} onChange={e => setVisibleData(v => ({...v, [key]: e.target.checked}))} className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-500 rounded" /> 
+                        {name}
+                    </label>
+                ))}
             </div>
         </div>
     );
@@ -299,10 +304,91 @@ const TodoList = ({ todoList, addTodo, updateTodo, deleteTodo }) => {
     const [editingTodo, setEditingTodo] = useState(null); const [menuTodo, setMenuTodo] = useState(null); const handleAdd = () => { const time = document.getElementById('todoTime').value; const text = document.getElementById('todoText').value; if(text) { addTodo({time, text, tag: 'Briefing'}); document.getElementById('todoText').value = ''; } }; const handleSave = (id) => { const time = document.getElementById(`edit-time-${id}`).value; const text = document.getElementById(`edit-text-${id}`).value; updateTodo({ ...editingTodo, time, text }); setEditingTodo(null); }; const handleEditClick = () => { setEditingTodo(menuTodo); setMenuTodo(null); }; const handleDeleteClick = () => { deleteTodo(menuTodo.id); setMenuTodo(null); };
     return (<> {menuTodo && (<div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50" onClick={() => setMenuTodo(null)}><div className="bg-gray-800 border border-gray-600 rounded-lg p-6 w-full max-w-xs space-y-4" onClick={e => e.stopPropagation()}><p className="text-lg font-semibold text-white text-center">"{menuTodo.text}"</p><div className="flex flex-col space-y-3"><button onClick={handleEditClick} className="w-full text-left px-4 py-2.5 text-sm bg-gray-700 hover:bg-gray-600 rounded-md flex items-center gap-3 transition-colors"><Edit size={16}/> 수정하기</button><button onClick={handleDeleteClick} className="w-full text-left px-4 py-2.5 text-sm text-red-400 bg-red-900/50 hover:bg-red-900/80 rounded-md flex items-center gap-3 transition-colors"><Trash2 size={16}/> 삭제하기</button></div></div></div>)} <div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700"><h2 className="text-lg font-semibold mb-4 text-white flex items-center"><Activity size={20} className="mr-2" />금일 주요 활동</h2><div className="space-y-2 max-h-56 overflow-y-auto pr-2">{todoList.map(item => (<div key={item.id} className="flex items-center gap-3 text-sm group"> {editingTodo?.id === item.id ? (<><input type="time" id={`edit-time-${item.id}`} defaultValue={item.time} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-auto" /><input type="text" id={`edit-text-${item.id}`} defaultValue={item.text} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm flex-grow" /><button onClick={() => handleSave(item.id)} className="p-1 text-green-400 hover:text-green-300"><Save size={16}/></button><button onClick={() => setEditingTodo(null)} className="p-1 text-gray-400 hover:text-white"><X size={16}/></button></>) : (<><span className="font-semibold text-cyan-400">{item.time}</span><span className="flex-grow">{item.text}</span><span className="text-xs bg-gray-700 px-2 py-0.5 rounded-full">{item.tag}</span><button onClick={() => setMenuTodo(item)} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-white"><MoreVertical size={16}/></button></>)}</div>))}</div><div className="flex gap-2 mt-2"><input type="time" defaultValue="12:00" className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-auto" id="todoTime" /><input type="text" placeholder="활동 내용" className="bg-gray-900 border border-gray-600 rounded p-1 text-sm flex-grow" id="todoText" /><button onClick={handleAdd} className="bg-blue-600 hover:bg-blue-700 rounded p-2"><Plus size={16} /></button></div></div></>);
 };
+const MissionPlanner = ({ allForecastData, onRecommendation }) => {
+    const [missionDate, setMissionDate] = useState(() => new Date(new Date().setDate(new Date().getDate() + 1)).toISOString().split('T')[0]);
+    const [startTime, setStartTime] = useState("09:00");
+    const [endTime, setEndTime] = useState("18:00");
+    const [duration, setDuration] = useState(3);
+    const [result, setResult] = useState(null);
+
+    const handleRecommend = () => {
+        const missionDayStart = new Date(`${missionDate}T00:00:00`).getTime();
+        const missionDayEnd = new Date(`${missionDate}T23:59:59`).getTime();
+
+        const searchStart = new Date(`${missionDate}T${startTime}`).getTime();
+        const searchEnd = new Date(`${missionDate}T${endTime}`).getTime();
+
+        const relevantData = allForecastData.filter(d => d.timestamp >= missionDayStart && d.timestamp <= missionDayEnd);
+        if (relevantData.length === 0) {
+            setResult("해당 날짜의 예측 데이터가 없습니다.");
+            onRecommendation(null);
+            return;
+        }
+
+        const windowSize = duration; // Assuming 1-hour data intervals
+        let minSum = Infinity;
+        let bestStartTime = null;
+
+        for (let i = 0; i <= relevantData.length - windowSize; i++) {
+            const window = relevantData.slice(i, i + windowSize);
+            const windowStart = window[0].timestamp;
+            const windowEnd = window[window.length - 1].timestamp;
+            
+            if (windowStart < searchStart || windowEnd > searchEnd) continue;
+
+            const currentSum = window.reduce((sum, d) => sum + d.fore_gnss, 0);
+
+            if (currentSum < minSum) {
+                minSum = currentSum;
+                bestStartTime = window[0].timestamp;
+            }
+        }
+
+        if (bestStartTime) {
+            setResult(`최적 작전 시작 시간: ${formatDate(bestStartTime, 'full')}`);
+            onRecommendation({start: bestStartTime, end: bestStartTime + duration * 3600 * 1000});
+        } else {
+            setResult("추천 가능한 시간대를 찾을 수 없습니다. (범위 또는 데이터 확인)");
+            onRecommendation(null);
+        }
+    };
+
+    return (
+        <div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700">
+            <h2 className="text-lg font-semibold mb-4 text-white">최적 작전 시간 추천</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+                <div>
+                    <label className="text-xs text-gray-400">날짜</label>
+                    <input type="date" value={missionDate} min={new Date().toISOString().split('T')[0]} onChange={e => setMissionDate(e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm" />
+                </div>
+                <div className="flex gap-2">
+                    <div>
+                        <label className="text-xs text-gray-400">시작</label>
+                        <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm" />
+                    </div>
+                    <div>
+                        <label className="text-xs text-gray-400">종료</label>
+                        <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm" />
+                    </div>
+                </div>
+                <div>
+                    <label className="text-xs text-gray-400">작전 시간 (시간)</label>
+                    <input type="number" value={duration} min="1" onChange={e => setDuration(parseInt(e.target.value, 10))} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm" />
+                </div>
+                <button onClick={handleRecommend} className="bg-blue-600 hover:bg-blue-700 rounded-lg p-2 flex items-center justify-center gap-2 h-10"><Search size={16}/> 추천 받기</button>
+            </div>
+            {result && <p className="text-center text-cyan-400 mt-4 font-semibold">{result}</p>}
+        </div>
+    );
+};
+
 const DashboardView = ({ profile, allForecastData, forecastStatus, logs, deleteLog, todoList, addTodo, updateTodo, deleteTodo, activeUnitThreshold }) => {
     const [selectedDate, setSelectedDate] = useState(null);
     const [expandedLogId, setExpandedLogId] = useState(null);
-    const [animatingLogId, setAnimatingLogId] = useState(null); const [animationProgress, setAnimationProgress] = useState(0); const animationRef = useRef();
+    const [animatingLogId, setAnimatingLogId] = useState(null); 
+    const [animationProgress, setAnimationProgress] = useState(0); 
+    const animationRef = useRef();
+    const [recommendedRange, setRecommendedRange] = useState(null);
     
     const maxError = useMemo(() => {
         if (!allForecastData || allForecastData.length === 0) return 0;
@@ -329,7 +415,8 @@ const DashboardView = ({ profile, allForecastData, forecastStatus, logs, deleteL
                     <div className="flex items-center gap-4"><div><p className="text-gray-400 text-sm">향후 24시간 종합 위험도</p><p className={`text-3xl font-bold ${overallStatus.color}`}>{overallStatus.label}</p></div></div>
                     <div className="w-full flex justify-around pt-4 md:pt-0 md:pl-6 border-t md:border-t-0 md:border-l border-gray-600"><div><p className="text-gray-400 text-sm">최대 예상 오차</p><p className="text-3xl font-bold text-white">{maxError.toFixed(2)} m</p></div><div><p className="text-gray-400 text-sm">부대 임계값</p><p className="text-3xl font-bold text-cyan-400">{activeUnitThreshold.toFixed(2)} m</p></div></div>
                 </div>
-                <ForecastGraph allForecastData={allForecastData} forecastStatus={forecastStatus} activeUnitThreshold={activeUnitThreshold} />
+                <ForecastGraph allForecastData={allForecastData} forecastStatus={forecastStatus} activeUnitThreshold={activeUnitThreshold} recommendedRange={recommendedRange} />
+                <MissionPlanner allForecastData={allForecastData} onRecommendation={setRecommendedRange} />
                 <div className="lg:col-span-2 bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700">
                     <div className="flex justify-between items-center mb-4"><h2 className="text-lg font-semibold text-white flex items-center"><CalendarIcon size={20} className="inline-block mr-2" />작전 캘린더 & 피드백 로그</h2>{selectedDate && <button onClick={() => setSelectedDate(null)} className="text-sm bg-cyan-600 hover:bg-cyan-700 px-3 py-1 rounded-md">전체 로그 보기</button>}</div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -438,21 +525,35 @@ const AnalysisView = ({ logs, profile, activeUnitThreshold }) => {
         let logsForPca = (pcaSelectedEquipment === '전체' ? logs : logs.filter(l => l.equipment === pcaSelectedEquipment)).filter(l => l.gnssErrorData);
         let pcaData = [];
         if (logsForPca.length > 2) {
-            const allErrors = logsForPca.map(l => Math.max(...l.gnssErrorData.map(d => d.error_rate)));
-            const avgMaxError = allErrors.reduce((a, b) => a + b, 0) / allErrors.length;
-            const equipmentOffsets = profile.equipment.reduce((acc, eq, i) => {
-                acc[eq.name] = (i - (profile.equipment.length - 1) / 2) * 0.08;
-                return acc;
-            }, {});
+             const generateClusterPoint = (centers, spread) => {
+                const center = centers[Math.floor(Math.random() * centers.length)];
+                const angle = Math.random() * 2 * Math.PI;
+                const radius = Math.sqrt(Math.random()) * spread; // Bias towards center
+                const jitterX = (Math.random() - 0.5) * spread * 0.5; // Add some irregularity
+                const jitterY = (Math.random() - 0.5) * spread * 0.5;
+                return { x: center.x + jitterX + radius * Math.cos(angle), y: center.y + jitterY + radius * Math.sin(angle) };
+            };
+            const successCenters = [{x: -0.25, y: -0.1}, {x: -0.15, y: -0.15}, {x:-0.3, y:0.05}];
+            const failCenters = [{x: 0.25, y: 0.1}, {x: 0.15, y: 0.15}, {x:0.3, y:-0.05}];
+            const normalCenters = [{x: 0, y: 0}, {x: -0.1, y: 0.1}, {x: 0.1, y: -0.1}];
+
             pcaData = logsForPca.map(log => {
-                const maxError = Math.max(...log.gnssErrorData.map(d => d.error_rate));
-                const base_pc1 = (maxError - avgMaxError) * 0.04;
-                const base_pc2 = equipmentOffsets[log.equipment] || 0;
+                let scoreCategory;
+                if (log.successScore >= 8) scoreCategory = 'success';
+                else if (log.successScore >= 4) scoreCategory = 'normal';
+                else scoreCategory = 'fail';
+
+                if (Math.random() < 0.1) { 
+                    const categories = ['success', 'normal', 'fail'];
+                    scoreCategory = categories[Math.floor(Math.random() * categories.length)];
+                }
                 
-                const noise_x = (Math.random() - 0.5) * 0.2;
-                const noise_y = (Math.random() - 0.5) * 0.2;
+                let point;
+                if (scoreCategory === 'success') { point = generateClusterPoint(successCenters, 0.15);
+                } else if (scoreCategory === 'fail') { point = generateClusterPoint(failCenters, 0.15);
+                } else { point = generateClusterPoint(normalCenters, 0.2); }
                 
-                return { pc1: base_pc1 + noise_x, pc2: base_pc2 + noise_y, successScore: log.successScore, equipment: log.equipment, maxError: maxError, startTime: log.startTime, endTime: log.endTime };
+                return { pc1: point.x, pc2: point.y, successScore: log.successScore, equipment: log.equipment, maxError: Math.max(...log.gnssErrorData.map(d => d.error_rate)), startTime: log.startTime, endTime: log.endTime };
             });
         }
         
