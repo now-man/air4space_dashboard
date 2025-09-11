@@ -1,13 +1,3 @@
 [build]
   command = "CI=false npm run build"
   publish = "build/"
-
-# 아래 [functions] 블록이 새로 추가되었습니다.
-[functions]
-  directory = "netlify/functions/"
-
-[[redirects]]
-  from = "/api/csv"
-  to = "/.netlify/functions/fetch-csv"
-  status = 200
-  force = true

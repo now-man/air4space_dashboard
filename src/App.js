@@ -90,7 +90,7 @@ export default function App() {
   const [forecastStatus, setForecastStatus] = useState({ isLoading: true, error: null });
 
   useEffect(() => {
-      const FETCH_URL = "/api/csv";
+      const FETCH_URL = "/data/forecast.csv";
       setForecastStatus({ isLoading: true, error: null });
       fetch(FETCH_URL)
           .then(response => { if (!response.ok) throw new Error('Failed to fetch'); return response.text(); })
