@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceArea, BarChart, Bar, ScatterChart, Scatter, ZAxis, Cell, Label } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceArea, BarChart, Bar, ScatterChart, Scatter, Cell, Label } from 'recharts';
 import { DayPicker } from 'react-day-picker';
 import { ko } from 'date-fns/locale';
 import { Zap, Settings, ShieldAlert, BotMessageSquare, Plus, Trash2, Save, ArrowLeft, UploadCloud, TestTube2, BrainCircuit, Eraser, Lightbulb, RefreshCw, PlayCircle, MapPin, Edit3, Compass, Activity, Calendar as CalendarIcon, MoreVertical, X, Edit, Home, BarChart3, Target, PlusCircle, Pencil, Square, Circle, Triangle, Star, Diamond, Hexagon, Aperture } from 'lucide-react';
@@ -257,13 +257,20 @@ const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold })
                     </LineChart>
                   </ResponsiveContainer>)}
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-x-4 gap-y-2 mt-4 pt-4 border-t border-gray-700">
-                {Object.entries(dataKeys).map(([key, {name}]) => (
-                    <label key={key} className="flex items-center gap-2 cursor-pointer text-sm text-gray-300">
-                        <input type="checkbox" checked={visibleData[key]} onChange={e => setVisibleData(v => ({...v, [key]: e.target.checked}))} className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-500 rounded" /> 
-                        {name}
-                    </label>
-                ))}
+            <div className="flex flex-col md:flex-row justify-between items-center mt-4 pt-4 border-t border-gray-700 gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-x-4 gap-y-2 w-full">
+                    {Object.entries(dataKeys).map(([key, {name}]) => (
+                        <label key={key} className="flex items-center gap-2 cursor-pointer text-sm text-gray-300">
+                            <input type="checkbox" checked={visibleData[key]} onChange={e => setVisibleData(v => ({...v, [key]: e.target.checked}))} className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-500 rounded" /> 
+                            {name}
+                        </label>
+                    ))}
+                </div>
+                {timeRange.start && <div className="flex items-center gap-2 w-full md:w-auto pt-4 md:pt-0 border-t border-gray-700 md:border-none">
+                    <input type="datetime-local" value={toLocalISOString(new Date(timeRange.start))} onChange={e => setTimeRange(r => ({...r, start: new Date(e.target.value).getTime()}))} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-full"/>
+                    <span className="text-gray-400">-</span>
+                    <input type="datetime-local" value={toLocalISOString(new Date(timeRange.end))} onChange={e => setTimeRange(r => ({...r, end: new Date(e.target.value).getTime()}))} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-full"/>
+                </div>}
             </div>
         </div>
     );
@@ -394,7 +401,7 @@ const AnalysisView = ({ logs, profile, activeUnitThreshold }) => {
         const avgScore = logs.reduce((acc, log) => acc + log.successScore, 0) / totalLogs;
         const highErrorLogs = logs.filter(l => l.gnssErrorData && l.gnssErrorData.some(d => d.lat) && Math.max(...l.gnssErrorData.map(d => d.error_rate)) > profile.unitManualThreshold);
         
-        const timeOfDayData = [{ n: '새벽 (00-06)', s: 0, n: 0, f: 0 }, { n: '오전 (06-12)', s: 0, n: 0, f: 0 }, { n: '오후 (12-18)', s: 0, n: 0, f: 0 }, { n: '야간 (18-24)', s: 0, n: 0, f: 0 }];
+        const timeOfDayData = [{ label: '새벽 (00-06)', s: 0, n: 0, f: 0 }, { label: '오전 (06-12)', s: 0, n: 0, f: 0 }, { label: '오후 (12-18)', s: 0, n: 0, f: 0 }, { label: '야간 (18-24)', s: 0, n: 0, f: 0 }];
         logs.forEach(log => { 
             const h = new Date(log.startTime).getHours(); 
             const p = timeOfDayData[Math.floor(h / 6)]; 
@@ -511,10 +518,10 @@ const AnalysisView = ({ logs, profile, activeUnitThreshold }) => {
                             <ScatterChart margin={{ top: 20, right: 30, bottom: 20, left: 20 }}>
                                 <CartesianGrid stroke="#4A5568" strokeDasharray="3 3"/>
                                 <XAxis type="number" dataKey="pc1" domain={[-0.5, 0.5]} stroke="#A0AEC0" tickFormatter={(v) => v.toFixed(1)}>
-                                     <Label value="PC1 (44.3%)" offset={-15} position="insideBottom" fill="#A0AEC0"/>
+                                     <Label value="PC1 (GNSS 오차 기반, 44.3%)" offset={-15} position="insideBottom" fill="#A0AEC0"/>
                                 </XAxis>
                                 <YAxis type="number" dataKey="pc2" domain={[-0.3, 0.3]} stroke="#A0AEC0" tickFormatter={(v) => v.toFixed(1)}>
-                                     <Label value="PC2 (19.2%)" angle={-90} offset={0} position="insideLeft" fill="#A0AEC0" style={{ textAnchor: 'middle' }}/>
+                                     <Label value="PC2 (장비 특성 기반, 19.2%)" angle={-90} offset={0} position="insideLeft" fill="#A0AEC0" style={{ textAnchor: 'middle' }}/>
                                 </YAxis>
                                 <Tooltip content={<CustomScatterTooltip />} cursor={{ strokeDasharray: '3 3' }} />
                                 {Object.entries(pcaDataByEquipment).map(([eqName, eqData]) => (
@@ -537,7 +544,7 @@ const AnalysisView = ({ logs, profile, activeUnitThreshold }) => {
                 </div>
                  <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
                     <h2 className="text-lg font-semibold text-white mb-4">시간대별 작전 성공률</h2>
-                    <ResponsiveContainer width="100%" height={300}><BarChart data={timeOfDayData} margin={{ top: 20, right: 20, bottom: 5, left: 0 }}><CartesianGrid strokeDasharray="3 3" stroke="#4A5568" /><XAxis dataKey="n" stroke="#A0AEC0" tick={{fontSize: 12}} /><YAxis stroke="#A0AEC0" /><Tooltip contentStyle={{ backgroundColor: '#1A202C' }} /><Legend /><Bar dataKey="s" stackId="a" fill="#4ade80" name="성공" /><Bar dataKey="n" stackId="a" fill="#facc15" name="보통" /><Bar dataKey="f" stackId="a" fill="#f87171" name="실패" /></BarChart></ResponsiveContainer>
+                    <ResponsiveContainer width="100%" height={300}><BarChart data={timeOfDayData} margin={{ top: 20, right: 20, bottom: 5, left: 0 }}><CartesianGrid strokeDasharray="3 3" stroke="#4A5568" /><XAxis dataKey="label" stroke="#A0AEC0" tick={{fontSize: 12}} /><YAxis stroke="#A0AEC0" /><Tooltip contentStyle={{ backgroundColor: '#1A202C' }} /><Legend /><Bar dataKey="s" stackId="a" fill="#4ade80" name="성공" /><Bar dataKey="n" stackId="a" fill="#facc15" name="보통" /><Bar dataKey="f" stackId="a" fill="#f87171" name="실패" /></BarChart></ResponsiveContainer>
                 </div>
                  <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
                     <h2 className="text-lg font-semibold text-white mb-4">주간 성공률 추이</h2>
