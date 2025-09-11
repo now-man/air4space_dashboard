@@ -110,7 +110,7 @@ export default function App() {
     switch (activeView) {
       case 'settings': return <SettingsView profiles={allProfiles} setProfiles={setAllProfiles} activeProfile={activeProfile} setActiveProfileId={setActiveProfileId} logs={missionLogs} goBack={() => setActiveView('dashboard')} createDefaultProfile={createDefaultProfile} />;
       case 'feedback': return <FeedbackView equipmentList={activeProfile.equipment} onSubmit={handleFeedbackSubmit} goBack={() => setActiveView('dashboard')} />;
-      case 'dev': return <DeveloperTestView setLogs={setMissionLogs} profile={activeProfile} goBack={() => setActiveView('dashboard')} />;
+      case 'dev': return <DeveloperTestView setLogs={setLogs} profile={activeProfile} goBack={() => setActiveView('dashboard')} />;
       case 'analysis': return <AnalysisView logs={missionLogs} profile={activeProfile} allForecastData={allForecastData} />;
       default: return <DashboardView profile={activeProfile} allForecastData={allForecastData} forecastStatus={forecastStatus} logs={missionLogs} deleteLog={deleteLog} todoList={todoList} addTodo={addTodo} updateTodo={updateTodo} deleteTodo={deleteTodo} />;
     }
@@ -339,39 +339,53 @@ const AnalysisView = ({ logs, profile, allForecastData }) => {
         }
         
         let pcaData = [];
-        const features = logs.map(log => {
-            let weatherDataPoint;
-            const start = new Date(log.startTime).getTime();
-            const end = new Date(log.endTime).getTime();
-            const relevantForecast = allForecastData.filter(d => d.timestamp >= start && d.timestamp <= end);
-            
-            if (relevantForecast.length > 0) {
-                weatherDataPoint = {
-                    tec: relevantForecast.reduce((sum, d) => sum + d.tec, 0) / relevantForecast.length,
-                    predicted_error: relevantForecast.reduce((sum, d) => sum + d.predicted_error, 0) / relevantForecast.length,
+        const forecastStats = allForecastData.length > 0 ? {
+            min_tec: Math.min(...allForecastData.map(d => d.tec)),
+            max_tec: Math.max(...allForecastData.map(d => d.tec)),
+            min_pred_err: Math.min(...allForecastData.map(d => d.predicted_error)),
+            max_pred_err: Math.max(...allForecastData.map(d => d.predicted_error)),
+        } : null;
+
+        if (logs.length > 0) {
+            const features = logs.map(log => {
+                const start = new Date(log.startTime).getTime();
+                const end = new Date(log.endTime).getTime();
+                
+                let relevantForecast = allForecastData.filter(d => d.timestamp >= start && d.timestamp <= end);
+                let weatherDataPoint = null;
+
+                if (relevantForecast.length > 0) {
+                    weatherDataPoint = {
+                        tec: relevantForecast.reduce((sum, d) => sum + d.tec, 0) / relevantForecast.length,
+                        predicted_error: relevantForecast.reduce((sum, d) => sum + d.predicted_error, 0) / relevantForecast.length,
+                    };
+                } else if (forecastStats) {
+                    // Simulate weather data for old logs
+                    weatherDataPoint = {
+                        tec: forecastStats.min_tec + Math.random() * (forecastStats.max_tec - forecastStats.min_tec),
+                        predicted_error: forecastStats.min_pred_err + Math.random() * (forecastStats.max_pred_err - forecastStats.min_pred_err)
+                    };
+                }
+
+                if (!weatherDataPoint || !log.gnssErrorData) return null;
+                
+                const max_actual_error = Math.max(...log.gnssErrorData.map(d => d.error_rate));
+                const hour = new Date(log.startTime).getHours();
+                return { 
+                    vector: [weatherDataPoint.tec, weatherDataPoint.predicted_error, max_actual_error, hour], 
+                    payload: { successScore: log.successScore, equipment: log.equipment, avg_tec_during_mission: weatherDataPoint.tec, maxError: max_actual_error } 
                 };
-            } else if (log.simulatedWeather) {
-                weatherDataPoint = log.simulatedWeather;
+            }).filter(Boolean);
+
+            if (features.length > 2) {
+                try {
+                    const dataVectors = features.map(f => f.vector);
+                    const standardized = PCAmod.Utils.standardize(dataVectors);
+                    const pca = new PCAmod.default(standardized);
+                    const projected = pca.predict(standardized, { nComponents: 2 });
+                    pcaData = projected.map((p, i) => ({ pc1: p[0], pc2: p[1], ...features[i].payload }));
+                } catch(e) { console.error("PCA analysis failed:", e); }
             }
-
-            if (!weatherDataPoint || !log.gnssErrorData) return null;
-            
-            const max_actual_error = Math.max(...log.gnssErrorData.map(d => d.error_rate));
-            const hour = new Date(log.startTime).getHours();
-            return { 
-                vector: [weatherDataPoint.tec, weatherDataPoint.predicted_error, max_actual_error, hour], 
-                payload: { successScore: log.successScore, equipment: log.equipment, avg_tec_during_mission: weatherDataPoint.tec, maxError: max_actual_error } 
-            };
-        }).filter(Boolean);
-
-        if (features.length > 2) {
-            try {
-                const dataVectors = features.map(f => f.vector);
-                const standardized = PCAmod.Utils.standardize(dataVectors);
-                const pca = new PCAmod.default(standardized);
-                const projected = pca.predict(standardized, { nComponents: 2 });
-                pcaData = projected.map((p, i) => ({ pc1: p[0], pc2: p[1], ...features[i].payload }));
-            } catch(e) { console.error("PCA analysis failed:", e); }
         }
 
         return { totalLogs, avgScore: avgScore.toFixed(1), highErrorLogs, timeOfDayData, trendData, equipmentData, thresholdAnalysis, pcaData };
@@ -529,26 +543,7 @@ const SettingsView = ({ profiles, setProfiles, activeProfile, setActiveProfileId
         </div><div className="mt-8 flex justify-end"><button onClick={handleSave} className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-6 rounded-lg flex items-center space-x-2"><Save className="w-5 h-5" /><span>저장</span></button></div></div>);
 };
 const DeveloperTestView = ({ setLogs, profile, goBack }) => {
-    const generateMockLogs = () => { if (!window.confirm("기존 피드백을 삭제하고, 최근 100일간의 테스트 데이터를 대량 생성합니까? (시연용 데이터 포함)")) return; const newLogs = []; const today = new Date(); for (let i = 0; i < 100; i++) { const date = new Date(today); date.setDate(today.getDate() - i); const logCount = Math.floor(Math.random() * 5) + 5; for (let j = 0; j < logCount; j++) { const eq = profile.equipment[Math.floor(Math.random() * profile.equipment.length)];
-            const rand = Math.random();
-            let outcome, baseError, successScore;
-            if (rand < 0.7) { outcome = 'success'; }
-            else if (rand < 0.9) { outcome = 'normal'; }
-            else { outcome = 'fail'; }
-            
-            if (outcome === 'success') {
-                baseError = 2 + Math.random() * (eq.manualThreshold * 0.5); // 낮고 안정적인 오차
-                successScore = Math.floor(8 + Math.random() * 3); // 8-10
-            } else if (outcome === 'normal') {
-                baseError = eq.manualThreshold * 0.7 + Math.random() * (eq.manualThreshold * 0.4); // 임계값 근처 오차
-                successScore = Math.floor(4 + Math.random() * 4); // 4-7
-            } else { // fail
-                baseError = eq.manualThreshold * 1.1 + Math.random() * 8; // 임계값 초과 오차
-                successScore = Math.floor(1 + Math.random() * 3); // 1-3
-            }
-            
-            const simulatedWeather = { tec: 10 + Math.random() * 40, predicted_error: 2 + Math.random() * 10 };
-            const startTime = new Date(date); startTime.setHours(Math.floor(Math.random() * 23), Math.floor(Math.random() * 60)); const endTime = new Date(startTime.getTime() + (30 + Math.floor(Math.random() * 90)) * 60000); const data = []; let curTime = new Date(startTime); const p0 = [profile.location.coords.lat+Math.random()*0.5, profile.location.coords.lon+Math.random()*0.5]; const p1 = [profile.location.coords.lat+Math.random()*0.5, profile.location.coords.lon+Math.random()*0.5]; const p2 = [profile.location.coords.lat+Math.random()*0.5, profile.location.coords.lon+Math.random()*0.5]; let step = 0; while (curTime < endTime) { const err = Math.max(1.0, baseError + (Math.random() - 0.5) * 4); const entry = { date: curTime.toISOString(), error_rate: parseFloat(err.toFixed(2))}; if (eq.usesGeoData) { const progress = step / ((endTime.getTime() - startTime.getTime()) / 60000 || 1); const pos = getPointOnBezierCurve(progress, p0, p1, p2); entry.lat = pos[0]; entry.lon = pos[1]; } data.push(entry); curTime.setMinutes(curTime.getMinutes() + 1); step++; } newLogs.push({ id: Date.now() + i * 100 + j, startTime: startTime.toISOString(), endTime: endTime.toISOString(), equipment: eq.name, successScore, gnssErrorData: data, simulatedWeather }); } } setLogs(newLogs.sort((a, b) => new Date(b.startTime) - new Date(a.startTime))); alert(`${newLogs.length}개의 테스트 피드백이 생성되었습니다.`); };
+    const generateMockLogs = () => { if (!window.confirm("기존 피드백을 삭제하고, 최근 100일간의 시연용 테스트 데이터를 대량 생성합니까?")) return; const newLogs = []; const today = new Date(); for (let i = 0; i < 100; i++) { const date = new Date(today); date.setDate(today.getDate() - i); const logCount = Math.floor(Math.random() * 5) + 5; for (let j = 0; j < logCount; j++) { const eq = profile.equipment[Math.floor(Math.random() * profile.equipment.length)]; const isBadWeather = Math.random() < 0.2; const baseError = isBadWeather ? (eq.manualThreshold * 1.1 + Math.random() * 5) : (2 + Math.random() * (eq.manualThreshold * 0.5)); let successScore; const errorRatio = baseError / eq.manualThreshold; if (errorRatio > 1.0) { successScore = Math.floor(1 + Math.random() * 3); } else if (errorRatio > 0.7) { successScore = Math.floor(4 + Math.random() * 4); } else { successScore = Math.floor(8 + Math.random() * 3); } const startTime = new Date(date); startTime.setHours(Math.floor(Math.random() * 23), Math.floor(Math.random() * 60)); const endTime = new Date(startTime.getTime() + (30 + Math.floor(Math.random() * 90)) * 60000); const data = []; let curTime = new Date(startTime); const p0 = [profile.location.coords.lat+Math.random()*0.5, profile.location.coords.lon+Math.random()*0.5]; const p1 = [profile.location.coords.lat+Math.random()*0.5, profile.location.coords.lon+Math.random()*0.5]; const p2 = [profile.location.coords.lat+Math.random()*0.5, profile.location.coords.lon+Math.random()*0.5]; let step = 0; while (curTime < endTime) { const err = Math.max(1.0, baseError + (Math.random() - 0.5) * 4); const entry = { date: curTime.toISOString(), error_rate: parseFloat(err.toFixed(2))}; if (eq.usesGeoData) { const progress = step / ((endTime.getTime() - startTime.getTime()) / 60000 || 1); const pos = getPointOnBezierCurve(progress, p0, p1, p2); entry.lat = pos[0]; entry.lon = pos[1]; } data.push(entry); curTime.setMinutes(curTime.getMinutes() + 1); step++; } newLogs.push({ id: Date.now() + i * 100 + j, startTime: startTime.toISOString(), endTime: endTime.toISOString(), equipment: eq.name, successScore, gnssErrorData: data }); } } setLogs(newLogs.sort((a, b) => new Date(b.startTime) - new Date(a.startTime))); alert(`${newLogs.length}개의 테스트 피드백이 생성되었습니다.`); };
     const clearLogs = () => { if (window.confirm("모든 피드백 데이터를 삭제하시겠습니까?")) { setLogs([]); alert("모든 피드백이 삭제되었습니다."); }};
     const resetAppState = () => { if (window.confirm("앱의 모든 로컬 데이터(프로필, 피드백 로그)를 삭제하고 초기 상태로 되돌리시겠습니까?")) { localStorage.clear(); alert("앱 상태가 초기화되었습니다. 페이지를 새로고침합니다."); window.location.reload(); }};
     return (<div className="bg-gray-800 p-6 md:p-8 rounded-xl border border-gray-700 max-w-2xl mx-auto"><div className="flex items-center mb-6"><button onClick={goBack} className="mr-4 p-2 rounded-full hover:bg-gray-700"><ArrowLeft className="w-6 h-6" /></button><h2 className="text-xl md:text-2xl font-bold text-white">개발자 테스트 도구</h2></div><div className="space-y-6"><div><h3 className="text-lg font-semibold text-white mb-3">피드백 데이터 관리</h3><div className="flex space-x-4"><button onClick={generateMockLogs} className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><TestTube2 size={20} /><span>테스트 데이터 생성</span></button><button onClick={clearLogs} className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><Eraser size={20} /><span>모든 데이터 삭제</span></button></div></div><div><h3 className="text-lg font-semibold text-white mb-3 text-red-400">위험 영역</h3><div className="flex space-x-4"><button onClick={resetAppState} className="w-full bg-red-800 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><RefreshCw size={20} /><span>앱 상태 전체 초기화</span></button></div></div></div></div>);
