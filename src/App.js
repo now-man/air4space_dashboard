@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceArea, BarChart, Bar, ScatterChart, Scatter, ZAxis, Cell, Label } from 'recharts';
 import { DayPicker } from 'react-day-picker';
 import { ko } from 'date-fns/locale';
@@ -173,7 +174,10 @@ const Header = ({ profile, setActiveView, activeView }) => {
         <header className="flex items-center justify-between p-4 bg-gray-800 border-b border-gray-700">
             <button onClick={() => setActiveView('dashboard')} className="flex items-center space-x-3 cursor-pointer hover:opacity-80 transition-opacity">
                 <ShieldAlert className="w-8 h-8 text-cyan-400 flex-shrink-0" />
-                <div><h1 className="text-lg md:text-xl font-bold text-white leading-tight">{profile.name}</h1></div>
+                <div>
+                    <h1 className="text-lg md:text-xl font-bold text-white leading-tight">{profile.name}</h1>
+                    <p className="text-xs text-gray-400 hidden md:block">우주기상 기반 GNSS 오차 분석 대시보드</p>
+                </div>
             </button>
             <div className="hidden md:flex items-center space-x-2">
                 <button onClick={() => setActiveView('dashboard')} className={`px-4 py-2 text-sm font-semibold rounded-lg flex items-center gap-2 ${activeView === 'dashboard' ? 'bg-cyan-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}><Home size={16}/> 홈</button>
@@ -270,7 +274,7 @@ const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold, r
                   </ResponsiveContainer>)}
             </div>
             <div className="flex flex-col xl:flex-row justify-between items-center mt-4 pt-4 border-t border-gray-700 gap-4">
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 w-full xl:w-auto">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-x-4 gap-y-2 w-full">
                     {Object.entries(dataKeys).map(([key, {name}]) => (
                         <label key={key} className="flex items-center gap-2 cursor-pointer text-sm text-gray-300">
                             <input type="checkbox" checked={visibleData[key]} onChange={e => setVisibleData(v => ({...v, [key]: e.target.checked}))} className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-500 rounded" /> 
@@ -311,6 +315,7 @@ const TodoList = ({ todoList, addTodo, updateTodo, deleteTodo }) => {
     const [newTodo, setNewTodo] = useState({ text: '', time: '12:00', tag: '브리핑' });
     const [editingTodo, setEditingTodo] = useState(null);
     const [menuOpenFor, setMenuOpenFor] = useState(null);
+    const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
     const [tagMenuOpenFor, setTagMenuOpenFor] = useState(null);
     const [customTag, setCustomTag] = useState('');
     const menuRef = useRef(null);
@@ -328,6 +333,13 @@ const TodoList = ({ todoList, addTodo, updateTodo, deleteTodo }) => {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
+    const handleMenuOpen = (e, item) => {
+        e.stopPropagation();
+        const rect = e.currentTarget.getBoundingClientRect();
+        setMenuPosition({ top: rect.bottom + window.scrollY, left: rect.right + window.scrollX });
+        setMenuOpenFor(item.id);
+    };
+    
     const handleAdd = () => {
         if (newTodo.text) {
             addTodo(newTodo);
@@ -351,12 +363,22 @@ const TodoList = ({ todoList, addTodo, updateTodo, deleteTodo }) => {
         }
     }
     
+    const MenuPopover = () => (
+        menuOpenFor && createPortal(
+            <div ref={menuRef} className="fixed z-20 w-32 bg-gray-700 border border-gray-600 rounded-md shadow-lg p-2 space-y-1" style={{ top: menuPosition.top, left: menuPosition.left, transform: 'translateX(-100%)' }}>
+                <button onClick={() => { setEditingTodo(todoList.find(t => t.id === menuOpenFor)); setMenuOpenFor(null); }} className="w-full text-left px-2 py-1 hover:bg-gray-600 rounded flex items-center gap-2"><Edit size={14}/> 수정</button>
+                <button onClick={() => deleteTodo(menuOpenFor)} className="w-full text-left px-2 py-1 hover:bg-gray-600 rounded flex items-center gap-2 text-red-400"><Trash2 size={14}/> 삭제</button>
+            </div>,
+            document.body
+        )
+    );
+
     return (
       <div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700">
         <h2 className="text-lg font-semibold mb-4 text-white flex items-center"><Activity size={20} className="mr-2" />금일 주요 활동</h2>
         <div className="space-y-2 max-h-56 overflow-y-auto pr-2">
             {todoList.map(item => (
-                <div key={item.id} className="flex items-center gap-3 text-sm group relative">
+                <div key={item.id} className="flex items-center gap-3 text-sm group">
                     {editingTodo?.id === item.id ? (
                         <>
                             <input type="time" value={editingTodo.time} onChange={e => setEditingTodo({...editingTodo, time: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-auto" />
@@ -378,18 +400,13 @@ const TodoList = ({ todoList, addTodo, updateTodo, deleteTodo }) => {
                             <span className="font-semibold text-cyan-400">{item.time}</span>
                             <span className="flex-grow">{item.text}</span>
                             <span className="text-xs bg-gray-700 px-2 py-0.5 rounded-full">{item.tag}</span>
-                            <button onClick={() => setMenuOpenFor(menuOpenFor === item.id ? null : item.id)} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-white"><MoreVertical size={16}/></button>
-                            {menuOpenFor === item.id && (
-                                <div ref={menuRef} className="absolute z-20 right-0 top-6 w-32 bg-gray-700 border border-gray-600 rounded-md shadow-lg p-2 space-y-1">
-                                    <button onClick={() => { setEditingTodo(item); setMenuOpenFor(null); }} className="w-full text-left px-2 py-1 hover:bg-gray-600 rounded flex items-center gap-2"><Edit size={14}/> 수정</button>
-                                    <button onClick={() => deleteTodo(item.id)} className="w-full text-left px-2 py-1 hover:bg-gray-600 rounded flex items-center gap-2 text-red-400"><Trash2 size={14}/> 삭제</button>
-                                </div>
-                            )}
+                            <button onClick={(e) => handleMenuOpen(e, item)} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-white"><MoreVertical size={16}/></button>
                         </>
                     )}
                 </div>
             ))}
         </div>
+        <MenuPopover />
         <div className="flex gap-2 mt-4 pt-4 border-t border-gray-700">
             <input type="time" value={newTodo.time} onChange={e => setNewTodo({...newTodo, time: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-auto" />
             <input type="text" placeholder="활동 내용" value={newTodo.text} onChange={e => setNewTodo({...newTodo, text: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm flex-grow" />
@@ -612,35 +629,19 @@ const AnalysisView = ({ logs, profile, activeUnitThreshold }) => {
         let logsForPca = (pcaSelectedEquipment === '전체' ? logs : logs.filter(l => l.equipment === pcaSelectedEquipment)).filter(l => l.gnssErrorData);
         let pcaData = [];
         if (logsForPca.length > 2) {
-            const generateClusterPoint = (centers, spread) => {
-                const center = centers[Math.floor(Math.random() * centers.length)];
-                const angle = Math.random() * 2 * Math.PI;
-                const radius = Math.sqrt(Math.random()) * spread;
-                const jitterX = (Math.random() - 0.5) * spread * 0.5;
-                const jitterY = (Math.random() - 0.5) * spread * 0.5;
-                return { x: center.x + jitterX + radius * Math.cos(angle), y: center.y + jitterY + radius * Math.sin(angle) };
-            };
-            const successCenters = [{x: -0.25, y: -0.1}, {x: -0.15, y: -0.15}, {x:-0.3, y:0.05}];
-            const failCenters = [{x: 0.25, y: 0.1}, {x: 0.15, y: 0.15}, {x:0.3, y:-0.05}];
-            const normalCenters = [{x: 0.05, y: 0.05}, {x: -0.05, y: 0.05}, {x: 0.05, y: -0.05}];
-
+            const allErrors = logsForPca.map(l => Math.max(...l.gnssErrorData.map(d => d.error_rate)));
+            const avgMaxError = allErrors.reduce((a, b) => a + b, 0) / allErrors.length;
+            const equipmentOffsets = profile.equipment.reduce((acc, eq, i) => {
+                acc[eq.name] = (i - (profile.equipment.length - 1) / 2) * 0.08;
+                return acc;
+            }, {});
             pcaData = logsForPca.map(log => {
-                let scoreCategory;
-                if (log.successScore >= 8) scoreCategory = 'success';
-                else if (log.successScore >= 4) scoreCategory = 'normal';
-                else scoreCategory = 'fail';
-
-                if (Math.random() < 0.1) { 
-                    const categories = ['success', 'normal', 'fail'];
-                    scoreCategory = categories[Math.floor(Math.random() * categories.length)];
-                }
-                
-                let point;
-                if (scoreCategory === 'success') { point = generateClusterPoint(successCenters, 0.15);
-                } else if (scoreCategory === 'fail') { point = generateClusterPoint(failCenters, 0.15);
-                } else { point = generateClusterPoint(normalCenters, 0.2); }
-                
-                return { pc1: point.x, pc2: point.y, successScore: log.successScore, equipment: log.equipment, maxError: Math.max(...log.gnssErrorData.map(d => d.error_rate)), startTime: log.startTime, endTime: log.endTime };
+                const maxError = Math.max(...log.gnssErrorData.map(d => d.error_rate));
+                const base_pc1 = (maxError - avgMaxError) * 0.04;
+                const base_pc2 = equipmentOffsets[log.equipment] || 0;
+                const noise_x = (Math.random() - 0.5) * 0.2;
+                const noise_y = (Math.random() - 0.5) * 0.2;
+                return { pc1: base_pc1 + noise_x, pc2: base_pc2 + noise_y, successScore: log.successScore, equipment: log.equipment, maxError: maxError, startTime: log.startTime, endTime: log.endTime };
             });
         }
         
