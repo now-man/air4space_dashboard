@@ -46,6 +46,22 @@ const generateNiceTicks = (startTime, endTime) => {
     return Array.from(new Set(ticks)).sort((a, b) => a - b);
 };
 
+const DEFAULT_PROFILES_DATA = [
+    { name: "제3훈련비행단", lat: 35.093849, lon: 128.086558 },
+    { name: "제5공중기동비행단", lat: 35.172992, lon: 128.947130 },
+    { name: "제17전투비행단", lat: 36.722071, lon: 127.495873 },
+    { name: "제15특수임무비행단", lat: 37.448781, lon: 127.105046 },
+    { name: "제19전투비행단", lat: 37.038455, lon: 127.895066 },
+    { name: "제1전투비행단", lat: 35.140006, lon: 126.810903 },
+    { name: "제8전투비행단", lat: 37.441973, lon: 127.966283 },
+    { name: "제10전투비행단", lat: 37.240132, lon: 127.006510 },
+    { name: "제11전투비행단", lat: 35.899110, lon: 128.639127 },
+    { name: "제16전투비행단", lat: 36.629042, lon: 128.357680 },
+    { name: "제18전투비행단", lat: 37.761001, lon: 128.956414 },
+    { name: "제20전투비행단", lat: 36.698670, lon: 126.503526 },
+    { name: "제38전투비행전대", lat: 35.926051, lon: 126.615725 }
+];
+
 // --- Main App Component ---
 export default function App() {
   const [activeView, setActiveView] = useState('dashboard');
@@ -68,10 +84,10 @@ export default function App() {
           const saved = localStorage.getItem('allProfiles');
           if (saved) {
               const parsed = JSON.parse(saved);
-              return parsed.length > 0 ? parsed : [createDefaultProfile(Date.now(), "제17전투비행단", 36.722701, 127.499102)];
+              return parsed.length > 0 ? parsed : DEFAULT_PROFILES_DATA.map((p, i) => createDefaultProfile(Date.now() + i, p.name, p.lat, p.lon));
           }
-      } catch (e) { return [ createDefaultProfile(Date.now(), "제17전투비행단", 36.722701, 127.499102), createDefaultProfile(Date.now() + 1, "제11전투비행단", 35.899526, 128.639791) ]; }
-      return [ createDefaultProfile(Date.now(), "제17전투비행단", 36.722701, 127.499102), createDefaultProfile(Date.now() + 1, "제11전투비행단", 35.899526, 128.639791) ];
+      } catch (e) { /* fall through to default */ }
+      return DEFAULT_PROFILES_DATA.map((p, i) => createDefaultProfile(Date.now() + i, p.name, p.lat, p.lon));
   });
 
   const [activeProfileId, setActiveProfileId] = useState(() => {
@@ -174,7 +190,7 @@ const Header = ({ profile, setActiveView, activeView }) => {
         <header className="flex items-center justify-between p-4 bg-gray-800 border-b border-gray-700">
             <button onClick={() => setActiveView('dashboard')} className="flex items-center space-x-3 cursor-pointer hover:opacity-80 transition-opacity">
                 <ShieldAlert className="w-8 h-8 text-cyan-400 flex-shrink-0" />
-                <div>
+                <div className="text-left">
                     <h1 className="text-lg md:text-xl font-bold text-white leading-tight">{profile.name}</h1>
                     <p className="text-xs text-gray-400 hidden md:block">우주기상 기반 GNSS 오차 분석 대시보드</p>
                 </div>
@@ -317,6 +333,7 @@ const TodoList = ({ todoList, addTodo, updateTodo, deleteTodo }) => {
     const [menuOpenFor, setMenuOpenFor] = useState(null);
     const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
     const [tagMenuOpenFor, setTagMenuOpenFor] = useState(null);
+    const [tagMenuPosition, setTagMenuPosition] = useState({ top: 0, left: 0 });
     const [customTag, setCustomTag] = useState('');
     const menuRef = useRef(null);
     const tagMenuRef = useRef(null);
@@ -336,10 +353,22 @@ const TodoList = ({ todoList, addTodo, updateTodo, deleteTodo }) => {
     const handleMenuOpen = (e, item) => {
         e.stopPropagation();
         const rect = e.currentTarget.getBoundingClientRect();
-        setMenuPosition({ top: rect.bottom + window.scrollY, left: rect.right + window.scrollX });
+        setMenuPosition({ top: rect.bottom + window.scrollY + 5, left: rect.left + window.scrollX });
         setMenuOpenFor(item.id);
     };
     
+    const openTagMenu = (e, id) => {
+        e.stopPropagation();
+        const rect = e.currentTarget.getBoundingClientRect();
+        const isNew = id === 'new';
+        setTagMenuPosition({ 
+            top: isNew ? rect.top + window.scrollY - 5 : rect.bottom + window.scrollY + 5, 
+            left: rect.left + window.scrollX,
+            transform: isNew ? 'translateY(-100%)' : 'none'
+        });
+        setTagMenuOpenFor(id);
+    };
+
     const handleAdd = () => {
         if (newTodo.text) {
             addTodo(newTodo);
@@ -367,7 +396,17 @@ const TodoList = ({ todoList, addTodo, updateTodo, deleteTodo }) => {
         menuOpenFor && createPortal(
             <div ref={menuRef} className="fixed z-20 w-32 bg-gray-700 border border-gray-600 rounded-md shadow-lg p-2 space-y-1" style={{ top: menuPosition.top, left: menuPosition.left, transform: 'translateX(-100%)' }}>
                 <button onClick={() => { setEditingTodo(todoList.find(t => t.id === menuOpenFor)); setMenuOpenFor(null); }} className="w-full text-left px-2 py-1 hover:bg-gray-600 rounded flex items-center gap-2"><Edit size={14}/> 수정</button>
-                <button onClick={() => deleteTodo(menuOpenFor)} className="w-full text-left px-2 py-1 hover:bg-gray-600 rounded flex items-center gap-2 text-red-400"><Trash2 size={14}/> 삭제</button>
+                <button onClick={() => { deleteTodo(menuOpenFor); setMenuOpenFor(null); }} className="w-full text-left px-2 py-1 hover:bg-gray-600 rounded flex items-center gap-2 text-red-400"><Trash2 size={14}/> 삭제</button>
+            </div>,
+            document.body
+        )
+    );
+
+    const TagMenu = ({ id, onSelect, onCustomSave }) => (
+        tagMenuOpenFor === id && createPortal(
+            <div ref={tagMenuRef} className="fixed z-20 w-40 bg-gray-700 border border-gray-600 rounded-md shadow-lg p-2 space-y-1" style={{...tagMenuPosition}}>
+                {uniqueTags.map(tag => <button key={tag} onClick={() => onSelect(tag)} className="w-full text-left px-2 py-1 hover:bg-gray-600 rounded">{tag}</button>)}
+                <div className="flex gap-1 pt-1 border-t border-gray-600"><input value={customTag} onChange={e => setCustomTag(e.target.value)} placeholder="직접 입력" className="w-full bg-gray-800 text-xs p-1 rounded"/><button onClick={onCustomSave} className="bg-blue-600 p-1 rounded"><Save size={12}/></button></div>
             </div>,
             document.body
         )
@@ -383,15 +422,8 @@ const TodoList = ({ todoList, addTodo, updateTodo, deleteTodo }) => {
                         <>
                             <input type="time" value={editingTodo.time} onChange={e => setEditingTodo({...editingTodo, time: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-auto" />
                             <input type="text" value={editingTodo.text} onChange={e => setEditingTodo({...editingTodo, text: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm flex-grow" />
-                            <div className="relative">
-                                <button onClick={() => setTagMenuOpenFor(tagMenuOpenFor === item.id ? null : item.id)} className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-0.5 rounded-full flex items-center gap-1">{editingTodo.tag} <ChevronDown size={12}/></button>
-                                {tagMenuOpenFor === item.id && (
-                                    <div ref={tagMenuRef} className="absolute z-20 right-0 mt-2 w-40 bg-gray-700 border border-gray-600 rounded-md shadow-lg p-2 space-y-1">
-                                        {uniqueTags.map(tag => <button key={tag} onClick={() => { setEditingTodo({...editingTodo, tag}); setTagMenuOpenFor(null); }} className="w-full text-left px-2 py-1 hover:bg-gray-600 rounded">{tag}</button>)}
-                                        <div className="flex gap-1"><input value={customTag} onChange={e => setCustomTag(e.target.value)} placeholder="직접 입력" className="w-full bg-gray-800 text-xs p-1 rounded"/><button onClick={() => handleCustomTagSave(item.id)} className="bg-blue-600 p-1 rounded"><Save size={12}/></button></div>
-                                    </div>
-                                )}
-                            </div>
+                            <button onClick={(e) => openTagMenu(e, item.id)} className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-0.5 rounded-full flex items-center gap-1">{editingTodo.tag} <ChevronDown size={12}/></button>
+                            <TagMenu id={item.id} onSelect={(tag) => { setEditingTodo({...editingTodo, tag}); setTagMenuOpenFor(null); }} onCustomSave={() => handleCustomTagSave(item.id)} />
                             <button onClick={() => handleSave(item.id)} className="p-1 text-green-400 hover:text-green-300"><Save size={16}/></button>
                             <button onClick={() => setEditingTodo(null)} className="p-1 text-gray-400 hover:text-white"><X size={16}/></button>
                         </>
@@ -410,15 +442,8 @@ const TodoList = ({ todoList, addTodo, updateTodo, deleteTodo }) => {
         <div className="flex gap-2 mt-4 pt-4 border-t border-gray-700">
             <input type="time" value={newTodo.time} onChange={e => setNewTodo({...newTodo, time: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-auto" />
             <input type="text" placeholder="활동 내용" value={newTodo.text} onChange={e => setNewTodo({...newTodo, text: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm flex-grow" />
-             <div className="relative">
-                <button onClick={() => setTagMenuOpenFor(tagMenuOpenFor === 'new' ? null : 'new')} className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-0.5 rounded-full flex items-center gap-1 h-full">{newTodo.tag} <ChevronDown size={12}/></button>
-                {tagMenuOpenFor === 'new' && (
-                    <div ref={tagMenuRef} className="absolute z-20 right-0 bottom-full mb-2 w-40 bg-gray-700 border border-gray-600 rounded-md shadow-lg p-2 space-y-1">
-                        {uniqueTags.map(tag => <button key={tag} onClick={() => { setNewTodo({...newTodo, tag}); setTagMenuOpenFor(null); }} className="w-full text-left px-2 py-1 hover:bg-gray-600 rounded">{tag}</button>)}
-                        <div className="flex gap-1"><input value={customTag} onChange={e => setCustomTag(e.target.value)} placeholder="직접 입력" className="w-full bg-gray-800 text-xs p-1 rounded"/><button onClick={() => handleCustomTagSave('new')} className="bg-blue-600 p-1 rounded"><Save size={12}/></button></div>
-                    </div>
-                )}
-            </div>
+            <button onClick={(e) => openTagMenu(e, 'new')} className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-0.5 rounded-full flex items-center gap-1">{newTodo.tag} <ChevronDown size={12}/></button>
+            <TagMenu id={'new'} onSelect={(tag) => { setNewTodo({...newTodo, tag}); setTagMenuOpenFor(null); }} onCustomSave={() => handleCustomTagSave('new')} />
             <button onClick={handleAdd} className="bg-blue-600 hover:bg-blue-700 rounded p-2"><Plus size={16} /></button>
         </div>
       </div>
@@ -629,19 +654,35 @@ const AnalysisView = ({ logs, profile, activeUnitThreshold }) => {
         let logsForPca = (pcaSelectedEquipment === '전체' ? logs : logs.filter(l => l.equipment === pcaSelectedEquipment)).filter(l => l.gnssErrorData);
         let pcaData = [];
         if (logsForPca.length > 2) {
-            const allErrors = logsForPca.map(l => Math.max(...l.gnssErrorData.map(d => d.error_rate)));
-            const avgMaxError = allErrors.reduce((a, b) => a + b, 0) / allErrors.length;
-            const equipmentOffsets = profile.equipment.reduce((acc, eq, i) => {
-                acc[eq.name] = (i - (profile.equipment.length - 1) / 2) * 0.08;
-                return acc;
-            }, {});
+            const generateClusterPoint = (centers, spread) => {
+                const center = centers[Math.floor(Math.random() * centers.length)];
+                const angle = Math.random() * 2 * Math.PI;
+                const radius = Math.sqrt(Math.random()) * spread;
+                const jitterX = (Math.random() - 0.5) * spread * 0.5;
+                const jitterY = (Math.random() - 0.5) * spread * 0.5;
+                return { x: center.x + jitterX + radius * Math.cos(angle), y: center.y + jitterY + radius * Math.sin(angle) };
+            };
+            const successCenters = [{x: -0.2, y: -0.1}, {x: -0.15, y: -0.15}, {x:-0.25, y:0.05}];
+            const failCenters = [{x: 0.2, y: 0.1}, {x: 0.15, y: 0.15}, {x:0.25, y:-0.05}];
+            const normalCenters = [{x: 0.05, y: 0.05}, {x: -0.05, y: 0.05}, {x: 0.05, y: -0.05}];
+
             pcaData = logsForPca.map(log => {
-                const maxError = Math.max(...log.gnssErrorData.map(d => d.error_rate));
-                const base_pc1 = (maxError - avgMaxError) * 0.04;
-                const base_pc2 = equipmentOffsets[log.equipment] || 0;
-                const noise_x = (Math.random() - 0.5) * 0.2;
-                const noise_y = (Math.random() - 0.5) * 0.2;
-                return { pc1: base_pc1 + noise_x, pc2: base_pc2 + noise_y, successScore: log.successScore, equipment: log.equipment, maxError: maxError, startTime: log.startTime, endTime: log.endTime };
+                let scoreCategory;
+                if (log.successScore >= 8) scoreCategory = 'success';
+                else if (log.successScore >= 4) scoreCategory = 'normal';
+                else scoreCategory = 'fail';
+
+                if (Math.random() < 0.1) { 
+                    const categories = ['success', 'normal', 'fail'];
+                    scoreCategory = categories[Math.floor(Math.random() * categories.length)];
+                }
+                
+                let point;
+                if (scoreCategory === 'success') { point = generateClusterPoint(successCenters, 0.12);
+                } else if (scoreCategory === 'fail') { point = generateClusterPoint(failCenters, 0.12);
+                } else { point = generateClusterPoint(normalCenters, 0.2); }
+                
+                return { pc1: point.x, pc2: point.y, successScore: log.successScore, equipment: log.equipment, maxError: Math.max(...log.gnssErrorData.map(d => d.error_rate)), startTime: log.startTime, endTime: log.endTime };
             });
         }
         
