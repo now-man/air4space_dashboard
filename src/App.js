@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceArea, BarChart, Bar, ScatterChart, Scatter, ZAxis, Cell, Label } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceArea, BarChart, Bar, ScatterChart, Scatter, ZAxis, Cell, Label, Heatmap, Tooltip as RechartsTooltip } from 'recharts';
 import { DayPicker } from 'react-day-picker';
 import { ko } from 'date-fns/locale';
-import { Zap, Settings, ShieldAlert, BotMessageSquare, Plus, Trash2, Save, ArrowLeft, UploadCloud, TestTube2, BrainCircuit, Eraser, Lightbulb, RefreshCw, PlayCircle, MapPin, Edit3, Compass, Activity, Calendar as CalendarIcon, MoreVertical, X, Edit, Home, BarChart3, Target, PlusCircle, Pencil, Square, Circle, Triangle, Star, Diamond, Hexagon, Aperture, Search, ChevronDown, RadioTower, Sun, Wind } from 'lucide-react';
+import { Zap, Settings, ShieldAlert, BotMessageSquare, Plus, Trash2, Save, ArrowLeft, UploadCloud, TestTube2, BrainCircuit, Eraser, Lightbulb, RefreshCw, PlayCircle, MapPin, Edit3, Compass, Activity, Calendar as CalendarIcon, MoreVertical, X, Edit, Home, BarChart3, Target, PlusCircle, Pencil, Square, Circle, Triangle, Star, Diamond, Hexagon, Aperture, Search, ChevronDown, RadioTower, Sun, Wind, Clock, Gauge } from 'lucide-react';
 import { MapContainer, TileLayer, CircleMarker, Tooltip as LeafletTooltip, Polyline, useMap, Circle as LeafletCircle } from 'react-leaflet';
 import L from 'leaflet';
 import 'react-day-picker/dist/style.css';
@@ -11,7 +11,7 @@ import 'react-day-picker/dist/style.css';
 // --- Helper Functions ---
 const getErrorColor = (error, threshold = 10.0) => { if (error > threshold) return '#f87171'; if (error > threshold * 0.7) return '#facc15'; return '#4ade80'; };
 const getSuccessScoreInfo = (score) => { if (score >= 8) return { label: "성공", color: "text-green-400", dotClass: "bg-green-500" }; if (score >= 4 && score < 8) return { label: "보통", color: "text-yellow-400", dotClass: "bg-yellow-500" }; return { label: "실패", color: "text-red-400", dotClass: "bg-red-500" }; };
-const formatDate = (dateString, format = 'full') => { if (!dateString) return 'N/A'; const date = new Date(dateString); const options = { full: { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }, time: { hour: '2-digit', minute: '2-digit', hour12: false }, date: { month: '2-digit', day: '2-digit' }}; return new Intl.DateTimeFormat('ko-KR', options[format]).format(date); };
+const formatDate = (dateString, format = 'full') => { if (!dateString) return 'N/A'; const date = new Date(dateString); const options = { full: { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }, time: { hour: '2-digit', minute: '2-digit', hour12: false }, date: { year: 'numeric', month: '2-digit', day: '2-digit' }}; return new Intl.DateTimeFormat('ko-KR', options[format]).format(date); };
 const toLocalISOString = (date) => new Date(date.getTime() - (date.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
 const getPointOnBezierCurve = (t, p0, p1, p2) => { const [x0, y0] = p0; const [x1, y1] = p1; const [x2, y2] = p2; const u = 1 - t; const tt = t * t; const uu = u * u; const x = uu * x0 + 2 * u * t * x1 + tt * x2; const y = uu * y0 + 2 * u * t * y1 + tt * y2; return [x, y]; };
 const formatDateKey = (d) => { if(!d) return null; d = new Date(d); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
@@ -87,16 +87,21 @@ export default function App() {
               return parsed.length > 0 ? parsed : DEFAULT_PROFILES_DATA.map((p, i) => createDefaultProfile(Date.now() + i, p.name, p.lat, p.lon));
           }
       } catch (e) { /* fall through to default */ }
-      return DEFAULT_PROFILES_DATA.map((p, i) => createDefaultProfile(Date.now() + i, p.name, p.lat, p.lon));
+      const defaultData = DEFAULT_PROFILES_DATA.map((p, i) => createDefaultProfile(Date.now() + i, p.name, p.lat, p.lon));
+      localStorage.setItem('allProfiles', JSON.stringify(defaultData));
+      return defaultData;
   });
 
   const [activeProfileId, setActiveProfileId] = useState(() => {
       try {
           const savedId = localStorage.getItem('activeProfileId');
           const parsedId = savedId ? JSON.parse(savedId) : null;
-          const profileExists = allProfiles.some(p => p.id === parsedId);
-          return parsedId && profileExists ? parsedId : allProfiles[0]?.id;
-      } catch (e) { return allProfiles[0]?.id; }
+          if (parsedId && allProfiles.some(p => p.id === parsedId)) {
+              return parsedId;
+          }
+      } catch (e) { /* fall through to default */ }
+      const defaultWing = allProfiles.find(p => p.name === "제17전투비행단");
+      return defaultWing ? defaultWing.id : allProfiles[0]?.id;
   });
 
   const activeProfile = useMemo(() => allProfiles.find(p => p.id === activeProfileId) || allProfiles[0], [allProfiles, activeProfileId]);
@@ -104,7 +109,7 @@ export default function App() {
   const [missionLogs, setMissionLogs] = useState(() => { try { const s = localStorage.getItem('missionLogs'); return s ? JSON.parse(s) : []; } catch (e) { return []; }});
   const [todoList, setTodoList] = useState(() => { try { const s = localStorage.getItem('todoList'); const todayKey = formatDateKey(new Date()); return s ? JSON.parse(s)[todayKey] || [] : []; } catch (e) { return []; }});
   const [allForecastData, setAllForecastData] = useState([]);
-  const [jammingEvents, setJammingEvents] = useState([]); // For Jamming simulation
+  const [jammingEvents, setJammingEvents] = useState(() => { try { const s = localStorage.getItem('jammingEvents'); return s ? JSON.parse(s) : []; } catch (e) { return []; }});
   const [forecastStatus, setForecastStatus] = useState({ isLoading: true, error: null });
 
   useEffect(() => {
@@ -140,6 +145,7 @@ export default function App() {
   useEffect(() => { localStorage.setItem('allProfiles', JSON.stringify(allProfiles)); }, [allProfiles]);
   useEffect(() => { localStorage.setItem('activeProfileId', JSON.stringify(activeProfileId)); }, [activeProfileId]);
   useEffect(() => { localStorage.setItem('missionLogs', JSON.stringify(missionLogs)); }, [missionLogs]);
+  useEffect(() => { localStorage.setItem('jammingEvents', JSON.stringify(jammingEvents)); }, [jammingEvents]);
   useEffect(() => { const todayKey = formatDateKey(new Date()); localStorage.setItem('todoList', JSON.stringify({ [todayKey]: todoList })); }, [todoList]);
 
   const handleFeedbackSubmit = (log) => { const newLogs = [...missionLogs, { ...log, id: Date.now() }]; setMissionLogs(newLogs.sort((a,b) => new Date(b.startTime) - new Date(a.startTime))); setActiveView('dashboard'); };
@@ -159,9 +165,9 @@ export default function App() {
     switch (activeView) {
       case 'settings': return <SettingsView profiles={allProfiles} setProfiles={setAllProfiles} activeProfile={activeProfile} setActiveProfileId={setActiveProfileId} goBack={() => setActiveView('dashboard')} createDefaultProfile={createDefaultProfile} />;
       case 'feedback': return <FeedbackView equipmentList={activeProfile.equipment} onSubmit={handleFeedbackSubmit} goBack={() => setActiveView('dashboard')} />;
-      case 'dev': return <DeveloperTestView setLogs={setMissionLogs} profile={activeProfile} setForecastData={setAllForecastData} setJammingEvents={setJammingEvents} goBack={() => setActiveView('dashboard')} />;
+      case 'dev': return <DeveloperTestView setLogs={setMissionLogs} profile={activeProfile} setForecastData={setAllForecastData} setJammingEvents={setJammingEvents} allForecastData={allForecastData} goBack={() => setActiveView('dashboard')} />;
       case 'analysis': return <AnalysisView logs={missionLogs} profile={activeProfile} activeUnitThreshold={activeUnitThreshold} allForecastData={allForecastData} />;
-      case 'jamming': return <JammingAnalysisView profile={activeProfile} spaceWeatherData={allForecastData} jammingEvents={jammingEvents} />;
+      case 'jamming': return <JammingAnalysisView profile={activeProfile} allForecastData={allForecastData} jammingEvents={jammingEvents} />;
       default: return <DashboardView profile={activeProfile} allForecastData={allForecastData} forecastStatus={forecastStatus} logs={missionLogs} deleteLog={deleteLog} todoList={todoList} addTodo={addTodo} updateTodo={updateTodo} deleteTodo={deleteTodo} activeUnitThreshold={activeUnitThreshold} />;
     }
   };
@@ -288,7 +294,7 @@ const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold, r
                         ))}
                         {visibleData['fore_gnss'] && <ReferenceLine yAxisId="left" y={activeUnitThreshold} label={{ value: "부대 임계값", fill: "#4FD1C5" }} stroke="#4FD1C5" strokeDasharray="4 4" />}
                         {isNowInRange && <ReferenceLine yAxisId="left" x={nowTimestamp} stroke="#fbbf24" strokeWidth={2} label={{ value: '현재', position: 'insideTop', fill: '#fbbf24' }} />}
-                        {recommendedRange && <ReferenceArea yAxisId="left" x1={recommendedRange.start} x2={recommendedRange.end} stroke="#4ade80" strokeOpacity={0.6} fill="#4ade80" fillOpacity={0.2} />}
+                        {recommendedRange && <ReferenceArea yAxisId="left" x1={recommendedRange.start} x2={recommendedRange.end} stroke="#4ade80" strokeOpacity={0.6} fill="#4ade80" fillOpacity={0.2} label={{ value: "추천 시간", position: "insideTop", fill: "#4ade80" }}/>}
                     </LineChart>
                 </ResponsiveContainer>)}
             </div>
@@ -329,6 +335,27 @@ const LiveMap = ({threshold, center}) => {
 const AutoFitBounds = ({ bounds }) => { const map = useMap(); useEffect(() => { if (bounds) map.fitBounds(bounds, { padding: [20, 20] }); }, [bounds, map]); return null; };
 const FeedbackChart = ({ data, equipment }) => { const activeThreshold = equipment.thresholdMode === 'auto' && equipment.autoThreshold ? equipment.autoThreshold : equipment.manualThreshold; const segments = useMemo(() => { const segs = []; let cur = null; data.forEach(d => { if (d.error_rate > activeThreshold) { if (!cur) cur = { x1: d.date, x2: d.date }; else cur.x2 = d.date; } else { if (cur) { segs.push(cur); cur = null; } } }); if (cur) segs.push(cur); return segs; }, [data, activeThreshold]); return (<div className="mt-4 h-40"><ResponsiveContainer width="100%" height="100%"><LineChart data={data} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}> <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" /><XAxis dataKey="date" stroke="#A0AEC0" tick={{ fontSize: 10 }} tickFormatter={(tick) => formatDate(tick, 'time')} /> <YAxis stroke="#A0AEC0" tick={{ fontSize: 10 }} domain={[0, 'dataMax + 2']} tickFormatter={(tick) => tick.toFixed(1)} /> <Tooltip contentStyle={{ backgroundColor: '#1A202C' }} labelFormatter={(label) => formatDate(label)} /> <Line type="monotone" dataKey="error_rate" name="GNSS 오차(m)" stroke="#F56565" strokeWidth={2} dot={false} /> {segments.map((seg, i) => <ReferenceArea key={i} x1={seg.x1} x2={seg.x2} stroke="none" fill="#f56565" fillOpacity={0.3} />)} <ReferenceLine y={activeThreshold} label={{ value: "임계값", position: 'insideTopLeft', fill: '#4FD1C5', fontSize: 10 }} stroke="#4FD1C5" strokeDasharray="3 3" /> </LineChart></ResponsiveContainer></div>); };
 const FeedbackMap = ({ data, equipment, isAnimating, animationProgress }) => { const activeThreshold = equipment.thresholdMode === 'auto' && equipment.autoThreshold ? equipment.autoThreshold : equipment.manualThreshold; const bounds = useMemo(() => data.length > 0 ? L.latLngBounds(data.map(p => [p.lat, p.lon])) : null, [data]); const animatedPosition = useMemo(() => { if(!isAnimating || data.length < 2) return null; const totalPoints = data.length - 1; const currentIndex = Math.min(Math.floor(animationProgress * totalPoints), totalPoints - 1); const nextIndex = Math.min(currentIndex + 1, totalPoints); const segmentProgress = (animationProgress * totalPoints) - currentIndex; const p1 = data[currentIndex]; const p2 = data[nextIndex]; return { lat: p1.lat + (p2.lat - p1.lat) * segmentProgress, lon: p1.lon + (p2.lon - p1.lon) * segmentProgress, error: p1.error_rate }; }, [isAnimating, animationProgress, data]); return (<div className="mt-2 h-56 rounded-lg overflow-hidden relative"><MapContainer center={data[0] ? [data[0].lat, data[0].lon] : [36.6, 127.4]} zoom={11} style={{ height: "100%", width: "100%" }} scrollWheelZoom={false}> <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; CARTO' /> {isAnimating ? (<Polyline positions={data.map(p => [p.lat, p.lon])} color="#6b7280" weight={3} dashArray="5, 10" />) : (data.slice(1).map((p, i) => (<Polyline key={i} positions={[[data[i].lat, data[i].lon], [p.lat, p.lon]]} color={getErrorColor(data[i].error_rate, activeThreshold)} weight={5} />)))} {animatedPosition && <CircleMarker center={animatedPosition} radius={7} pathOptions={{ color: '#fff', fillColor: getErrorColor(animatedPosition.error, activeThreshold), weight: 2, fillOpacity: 1 }} />} <AutoFitBounds bounds={bounds} /> </MapContainer></div>); };
+// Helper for parsing XAI text
+const parseStyledText = (text) => {
+    const keywordStyles = {
+        "위험": "text-red-400 font-bold",
+        "주의": "text-yellow-400 font-bold",
+        "안정": "text-green-400 font-bold",
+    };
+
+    const parts = text.split(/(\*\*.*?\*\*|\b위험\b|\b주의\b|\b안정\b)/g);
+    
+    return parts.map((part, index) => {
+        if (part.startsWith('**') && part.endsWith('**')) {
+            return <strong key={index}>{part.slice(2, -2)}</strong>;
+        }
+        if (keywordStyles[part]) {
+            return <span key={index} className={keywordStyles[part]}>{part}</span>;
+        }
+        return part;
+    });
+};
+
 const XAIAnalysisReport = ({ allForecastData, threshold }) => {
     const analysis = useMemo(() => {
         if (!allForecastData || allForecastData.length === 0) return null;
@@ -336,30 +363,27 @@ const XAIAnalysisReport = ({ allForecastData, threshold }) => {
         const now = new Date().getTime();
         const next24h = now + 24 * 3600 * 1000;
         const relevantData = allForecastData.filter(d => d.timestamp >= now && d.timestamp <= next24h);
-        if (relevantData.length === 0) return { maxError: 0, factors: [], advisory: "예측 데이터가 없습니다." };
+        if (relevantData.length === 0) return { conclusion: "예측 데이터가 없습니다.", recommendation: "", factors: [] };
 
-        const maxErrorPoint = relevantData.reduce((max, p) => p.fore_gnss > max.fore_gnss ? p : max, relevantData[0]);
+        const maxErrorPoint = relevantData.reduce((max, p) => p.fore_gnss > max.fore_gnss ? p : max, { fore_gnss: 0 });
         const maxError = maxErrorPoint.fore_gnss;
         
         const factors = [];
-        // Kp Index (Geomagnetic Storm)
-        if (maxErrorPoint.kp10 >= 5) factors.push({ severity: "높은", name: "Kp 지수", value: maxErrorPoint.kp10.toFixed(1), cause: "지자기 폭풍", icon: <Wind size={16} className="text-yellow-400"/> });
-        // X-ray Flux (Solar Flare)
-        if (maxErrorPoint.xrsb > 1e-5) factors.push({ severity: "높은", name: "X선 플럭스", value: maxErrorPoint.xrsb.toExponential(1), cause: "태양 플레어", icon: <Sun size={16} className="text-red-400"/> });
-        // TEC (Total Electron Content)
-        if (maxErrorPoint.tec_value > 50) factors.push({ severity: "높은", name: "총 전자 함유량(TEC)", value: maxErrorPoint.tec_value.toFixed(1), cause: "전리층 불안정", icon: <Zap size={16} className="text-blue-400"/>});
+        if (maxErrorPoint.kp10 >= 5) factors.push({ severity: "높음", name: "Kp 지수", value: maxErrorPoint.kp10.toFixed(1), cause: "지자기 폭풍", icon: <Wind size={16} className="text-yellow-400"/> });
+        if (maxErrorPoint.xrsb > 1e-5) factors.push({ severity: "높음", name: "X선 플럭스", value: maxErrorPoint.xrsb.toExponential(1), cause: "태양 플레어", icon: <Sun size={16} className="text-red-400"/> });
+        if (maxErrorPoint.tec_value > 50) factors.push({ severity: "높음", name: "총 전자 함유량(TEC)", value: maxErrorPoint.tec_value.toFixed(1), cause: "전리층 불안정", icon: <Zap size={16} className="text-blue-400"/>});
 
         let conclusion = `24시간 내 최대 GNSS 오차는 **${maxError.toFixed(2)}m**로 예측됩니다. 이는 부대 임계값 ${threshold.toFixed(2)}m 대비 `;
         let recommendation;
 
         if (maxError > threshold) {
-            conclusion += "**위험** 수준입니다.";
+            conclusion += "위험 수준입니다.";
             recommendation = "정밀 타격 및 GNSS 의존도가 높은 임무 수행 시 각별한 주의가 필요하며, 대체 항법 수단 사용을 적극 고려해야 합니다.";
         } else if (maxError > threshold * 0.7) {
-            conclusion += "**주의** 수준입니다.";
+            conclusion += "주의 수준입니다.";
             recommendation = "GNSS 민감 장비 운용 시 간헐적 오차 증가에 대비하고, 대체 항법 수단을 숙지하십시오.";
         } else {
-            conclusion += "**안정** 수준입니다.";
+            conclusion += "안정 수준입니다.";
             recommendation = "모든 임무를 정상적으로 수행할 수 있습니다.";
         }
 
@@ -369,10 +393,8 @@ const XAIAnalysisReport = ({ allForecastData, threshold }) => {
         } else if (maxError > threshold * 0.5) {
             conclusion += ` 복합적인 우주기상 요인의 영향으로 보입니다.`
         }
-
-
+        
         return { conclusion, recommendation, factors };
-
     }, [allForecastData, threshold]);
 
     if (!analysis) return null;
@@ -383,7 +405,7 @@ const XAIAnalysisReport = ({ allForecastData, threshold }) => {
             <div className="space-y-4 text-sm">
                 <div>
                     <p className="font-semibold text-gray-300">종합 분석</p>
-                    <p className="text-gray-400" dangerouslySetInnerHTML={{ __html: analysis.conclusion }}></p>
+                    <p className="text-gray-400">{parseStyledText(analysis.conclusion)}</p>
                 </div>
                 {analysis.factors.length > 0 && (
                     <div>
@@ -529,11 +551,76 @@ const TodoList = ({ todoList, addTodo, updateTodo, deleteTodo }) => {
       </div>
     );
 };
-const FutureMissionPlanner = ({ allForecastData, profile, onRecommendation }) => {
+const OptimalTimeRecommender = ({ allForecastData, onRecommendation }) => {
+    const [searchStart, setSearchStart] = useState(() => toLocalISOString(new Date()));
+    const [searchEnd, setSearchEnd] = useState(() => toLocalISOString(new Date(new Date().getTime() + 48 * 3600 * 1000)));
+    const [duration, setDuration] = useState(3);
+    const [result, setResult] = useState(null);
+
+    const handleRecommend = () => {
+        const searchStartTs = new Date(searchStart).getTime();
+        const searchEndTs = new Date(searchEnd).getTime();
+        
+        // Data points are hourly, so duration is in hours.
+        const durationInPoints = duration;
+
+        const relevantData = allForecastData.filter(d => d.timestamp >= searchStartTs && d.timestamp <= searchEndTs);
+        if (relevantData.length < durationInPoints) {
+            setResult("해당 시간 범위의 예측 데이터가 작전 시간보다 짧습니다.");
+            onRecommendation(null);
+            return;
+        }
+
+        let minSum = Infinity;
+        let bestStartTime = null;
+
+        for (let i = 0; i <= relevantData.length - durationInPoints; i++) {
+            const window = relevantData.slice(i, i + durationInPoints);
+            const currentSum = window.reduce((sum, d) => sum + d.fore_gnss, 0);
+
+            if (currentSum < minSum) {
+                minSum = currentSum;
+                bestStartTime = window[0].timestamp;
+            }
+        }
+
+        if (bestStartTime) {
+            const recommendedEnd = bestStartTime + duration * 3600 * 1000;
+            setResult(`추천 작전 시간: ${formatDate(bestStartTime, 'full')} ~ ${formatDate(recommendedEnd, 'time')}`);
+            onRecommendation({start: bestStartTime, end: recommendedEnd});
+        } else {
+            setResult("추천 가능한 시간대를 찾을 수 없습니다.");
+            onRecommendation(null);
+        }
+    };
+
+    return (
+        <div className="bg-gray-800 p-4 rounded-xl border border-gray-700">
+            <h2 className="text-lg font-semibold mb-4 text-white">최적 작전 시간 추천</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+                <div>
+                    <label className="text-xs text-gray-400">탐색 시작</label>
+                    <input type="datetime-local" value={searchStart} min={toLocalISOString(new Date())} onChange={e => setSearchStart(e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm" />
+                </div>
+                 <div>
+                    <label className="text-xs text-gray-400">탐색 종료</label>
+                    <input type="datetime-local" value={searchEnd} min={searchStart} onChange={e => setSearchEnd(e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm" />
+                </div>
+                <div>
+                    <label className="text-xs text-gray-400">작전 시간 (시간)</label>
+                    <input type="number" value={duration} min="1" onChange={e => setDuration(parseInt(e.target.value, 10))} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm" />
+                </div>
+                <button onClick={handleRecommend} className="bg-blue-600 hover:bg-blue-700 rounded-lg p-2 flex items-center justify-center gap-2 h-10"><Search size={16}/> 추천 받기</button>
+            </div>
+            {result && <p className="text-center text-cyan-400 mt-4 font-semibold">{result}</p>}
+        </div>
+    );
+};
+const FutureMissionPlanner = ({ allForecastData, profile }) => {
     const [plan, setPlan] = useState({
         name: '정밀 타격 훈련',
-        startTime: toLocalISOString(new Date(new Date().setDate(new Date().getDate() + 1))),
-        endTime: toLocalISOString(new Date(new Date().setDate(new Date().getDate() + 1, new Date().getHours() + 2))),
+        startTime: toLocalISOString(new Date(new Date().getTime() + 24 * 3600 * 1000)),
+        endTime: toLocalISOString(new Date(new Date().getTime() + 26 * 3600 * 1000)),
         equipment: profile.equipment.length > 0 ? profile.equipment[0].name : '',
     });
     const [prediction, setPrediction] = useState(null);
@@ -550,7 +637,6 @@ const FutureMissionPlanner = ({ allForecastData, profile, onRecommendation }) =>
         const relevantData = allForecastData.filter(d => d.timestamp >= startTimeTs && d.timestamp <= endTimeTs);
         if (relevantData.length === 0) {
             setPrediction({ error: "해당 시간 범위의 예측 데이터가 없습니다." });
-            onRecommendation(null);
             return;
         }
 
@@ -574,7 +660,6 @@ const FutureMissionPlanner = ({ allForecastData, profile, onRecommendation }) =>
             threshold: threshold.toFixed(2),
             error: null,
         });
-        onRecommendation({start: startTimeTs, end: endTimeTs });
     };
 
     return (
@@ -643,7 +728,8 @@ const DashboardView = ({ profile, allForecastData, forecastStatus, logs, deleteL
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-6">
                 <ForecastGraph allForecastData={allForecastData} forecastStatus={forecastStatus} activeUnitThreshold={activeUnitThreshold} recommendedRange={recommendedRange} />
-                <FutureMissionPlanner allForecastData={allForecastData} profile={profile} onRecommendation={setRecommendedRange} />
+                <OptimalTimeRecommender allForecastData={allForecastData} onRecommendation={setRecommendedRange} />
+                <FutureMissionPlanner allForecastData={allForecastData} profile={profile} />
                 <div className="lg:col-span-2 bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700">
                     <div className="flex justify-between items-center mb-4"><h2 className="text-lg font-semibold text-white flex items-center"><CalendarIcon size={20} className="inline-block mr-2" />작전 캘린더 & 피드백 로그</h2>{selectedDate && <button onClick={() => setSelectedDate(null)} className="text-sm bg-cyan-600 hover:bg-cyan-700 px-3 py-1 rounded-md">전체 로그 보기</button>}</div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -703,10 +789,20 @@ const ShapeIcon = ({ shape, color = "white" }) => {
 const PredictionAccuracyAnalysis = ({ logs, allForecastData }) => {
     const [selectedLogId, setSelectedLogId] = useState('');
     
+    useEffect(() => {
+        // Set the most recent log as default on component mount
+        if (logs && logs.length > 0) {
+            const validLogs = logs.filter(l => l.gnssErrorData && l.gnssErrorData.length > 0);
+            if(validLogs.length > 0) {
+                setSelectedLogId(validLogs[0].id);
+            }
+        }
+    }, [logs]);
+
     const analysisResult = useMemo(() => {
         if (!selectedLogId || !logs || !allForecastData) return null;
 
-        const log = logs.find(l => l.id === selectedLogId);
+        const log = logs.find(l => l.id === Number(selectedLogId));
         if (!log || !log.gnssErrorData || log.gnssErrorData.length === 0) return null;
         
         const startTime = new Date(log.startTime).getTime();
@@ -714,16 +810,12 @@ const PredictionAccuracyAnalysis = ({ logs, allForecastData }) => {
 
         const forecastInRange = allForecastData.filter(d => d.timestamp >= startTime && d.timestamp <= endTime);
         if(forecastInRange.length === 0) return { chartData: [], mae: 'N/A' };
-
-        // Create a map for quick forecast lookup
-        const forecastMap = new Map(forecastInRange.map(d => [d.timestamp, d.fore_gnss]));
         
         let totalError = 0;
         let comparisonCount = 0;
 
         const chartData = log.gnssErrorData.map(realDataPoint => {
             const realTimestamp = new Date(realDataPoint.date).getTime();
-            // Find the closest forecast point in time
             const closestForecast = forecastInRange.reduce((prev, curr) => 
                 Math.abs(curr.timestamp - realTimestamp) < Math.abs(prev.timestamp - realTimestamp) ? curr : prev
             );
@@ -754,7 +846,7 @@ const PredictionAccuracyAnalysis = ({ logs, allForecastData }) => {
             <div className="flex flex-col sm:flex-row gap-4 mb-4">
                 <select 
                     value={selectedLogId} 
-                    onChange={e => setSelectedLogId(Number(e.target.value))}
+                    onChange={e => setSelectedLogId(e.target.value)}
                     className="bg-gray-900 border-gray-600 rounded-md px-3 py-2 text-sm w-full"
                 >
                     <option value="">분석할 작전 로그 선택</option>
@@ -764,7 +856,7 @@ const PredictionAccuracyAnalysis = ({ logs, allForecastData }) => {
                         </option>
                     ))}
                 </select>
-                {analysisResult && <div className="bg-gray-900/50 p-2 rounded-md text-center">
+                {analysisResult && <div className="bg-gray-900/50 p-2 rounded-md text-center shrink-0">
                     <span className="text-sm text-gray-400">평균 절대 오차 (MAE): </span>
                     <span className="text-lg font-bold text-cyan-400">{analysisResult.mae} m</span>
                 </div>}
@@ -1000,86 +1092,154 @@ const AnalysisView = ({ logs, profile, activeUnitThreshold, allForecastData }) =
         </div>
     );
 };
-const JammingAnalysisView = ({ profile, spaceWeatherData, jammingEvents }) => {
-    const [timeRange, setTimeRange] = useState({ start: null, end: null });
+const JammingAnalysisView = ({ allForecastData, jammingEvents }) => {
 
-    useEffect(() => {
-        if (spaceWeatherData && spaceWeatherData.length > 0) {
-            const now = new Date().getTime();
-            const defaultStart = now - 6 * 3600 * 1000;
-            const defaultEnd = now + 6 * 3600 * 1000;
-            setTimeRange({ start: defaultStart, end: defaultEnd });
-        }
-    }, [spaceWeatherData]);
+    const analysisData = useMemo(() => {
+        if (!allForecastData || allForecastData.length === 0) return null;
 
-    const chartData = useMemo(() => {
-        if (!timeRange.start || !spaceWeatherData) return [];
-
-        const data = spaceWeatherData.filter(d => d.timestamp >= timeRange.start && d.timestamp <= timeRange.end);
-
+        // 1. Create a forecast map for quick lookup
+        const forecastMap = new Map(allForecastData.map(d => [d.timestamp, d.fore_gnss]));
+        
+        // 2. Combine forecast data with jamming events to create a unified timeline of "actual" error
+        let combinedData = [...allForecastData];
         jammingEvents.forEach(event => {
-            if (event.timestamp >= timeRange.start && event.timestamp <= timeRange.end) {
-                // Find the closest data point to inject the jamming spike
-                let closestPoint = null;
-                let minDiff = Infinity;
-                
-                data.forEach(d => {
-                    const diff = Math.abs(d.timestamp - event.timestamp);
-                    if (diff < minDiff) {
-                        minDiff = diff;
-                        closestPoint = d;
-                    }
-                });
+            const startIndex = combinedData.findIndex(d => d.timestamp >= event.startTime);
+            const endIndex = combinedData.findIndex(d => d.timestamp >= event.endTime);
+            if (startIndex === -1 || endIndex === -1) return;
 
-                if (closestPoint) {
-                    closestPoint.fore_gnss = (closestPoint.fore_gnss || 0) + event.magnitude;
-                    closestPoint.isJamming = true;
+            for (let i = startIndex; i < endIndex; i++) {
+                // Simulate a parabolic spike for the jamming event
+                const progress = (combinedData[i].timestamp - event.startTime) / (event.endTime - event.startTime);
+                const spike = event.magnitude * (1 - Math.pow(2 * progress - 1, 2));
+                combinedData[i].real_gnss_jammed = (combinedData[i].fore_gnss || 0) + spike;
+            }
+        });
+
+        // 3. Calculate Jamming Index
+        combinedData.forEach(d => {
+            const forecastError = forecastMap.get(d.timestamp) || 0;
+            const actualError = d.real_gnss_jammed || d.real_gnss || forecastError; // Use jammed > real > forecast
+            d.jammingIndex = Math.max(0, actualError - forecastError);
+        });
+
+        // 4. Detect events and analyze statistics
+        const detectedEvents = [];
+        let currentEvent = null;
+        combinedData.forEach(d => {
+            if (d.jammingIndex > 5) { // Detection threshold for jamming index
+                if (!currentEvent) {
+                    currentEvent = { startTime: d.timestamp, maxIndex: 0, points: [] };
+                }
+                currentEvent.points.push(d);
+                currentEvent.maxIndex = Math.max(currentEvent.maxIndex, d.jammingIndex);
+            } else {
+                if (currentEvent) {
+                    currentEvent.endTime = currentEvent.points[currentEvent.points.length - 1].timestamp;
+                    currentEvent.duration = (currentEvent.endTime - currentEvent.startTime) / 60000; // in minutes
+                    if(currentEvent.duration > 5) { // Minimum duration to be considered an event
+                       detectedEvents.push(currentEvent);
+                    }
+                    currentEvent = null;
                 }
             }
         });
-        return data;
-    }, [spaceWeatherData, jammingEvents, timeRange]);
+
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        const todayTs = today.getTime();
+
+        const todayEvents = detectedEvents.filter(e => e.startTime >= todayTs);
+
+        // 5. Prepare heatmap data
+        const heatmapData = Array(7).fill(0).map(() => Array(24).fill(0));
+        const days = ['일', '월', '화', '수', '목', '금', '토'];
+        detectedEvents.forEach(event => {
+            const date = new Date(event.startTime);
+            const day = date.getDay();
+            const hour = date.getHours();
+            heatmapData[day][hour]++;
+        });
+        const formattedHeatmapData = [];
+        for (let i = 0; i < 7; i++) {
+            for (let j = 0; j < 24; j++) {
+                if(heatmapData[i][j] > 0) {
+                    formattedHeatmapData.push({ day: days[i], hour: `${j}시`, value: heatmapData[i][j] });
+                }
+            }
+        }
+        
+        return {
+            timeline: combinedData,
+            stats: {
+                totalEvents: detectedEvents.length,
+                todayCount: todayEvents.length,
+                avgDuration: detectedEvents.length > 0 ? (detectedEvents.reduce((acc, e) => acc + e.duration, 0) / detectedEvents.length).toFixed(0) : 0,
+                avgMagnitude: detectedEvents.length > 0 ? (detectedEvents.reduce((acc, e) => acc + e.maxIndex, 0) / detectedEvents.length).toFixed(1) : 0,
+            },
+            scatterData: detectedEvents.map(e => ({ duration: e.duration, magnitude: e.maxIndex })),
+            heatmapData: formattedHeatmapData
+        };
+
+    }, [allForecastData, jammingEvents]);
+
+    if (!analysisData) return <div className="text-center text-gray-400 p-8">분석 데이터를 불러오는 중입니다...</div>;
     
     return (
         <div className="space-y-6">
-            <h1 className="text-2xl font-bold text-white mb-6">GPS 교란 및 재밍 분석</h1>
-            <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
-                <p className="text-gray-300">이 페이지는 특정 지역에 국한된 급격한 GNSS 오차 증가(재밍)와, 광범위한 지역에 영향을 미치는 우주기상 현상을 비교 분석합니다. 재밍은 우주기상 지수 변화 없이 GNSS 오차만 급증하는 특징을 보입니다.</p>
+            <h1 className="text-2xl font-bold text-white">GPS 교란 및 재밍 심층 분석</h1>
+             <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
+                <p className="text-gray-300">
+                    이 페이지는 **재밍 지수(Jamming Index)**를 활용하여 우주기상에 의한 배경 오차를 제거하고, 인위적인 GPS 교란 신호만을 탐지하여 분석합니다.
+                    <br />
+                    <span className="text-cyan-400 font-mono text-sm">재밍 지수 = (실제/관측 GNSS 오차) - (우주기상 기반 예측 GNSS 오차)</span>
+                </p>
             </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                 <StatCard title="오늘 탐지된 재밍" value={`${analysisData.stats.todayCount} 건`} icon={<ShieldAlert size={24}/>} color="red" />
+                 <StatCard title="최근 7일간 총 재밍" value={`${analysisData.stats.totalEvents} 건`} icon={<BarChart3 size={24}/>} color="yellow" />
+                 <StatCard title="평균 지속 시간" value={`${analysisData.stats.avgDuration} 분`} icon={<Clock size={24}/>} color="cyan" />
+                 <StatCard title="평균 재밍 강도" value={`${analysisData.stats.avgMagnitude} m`} icon={<Gauge size={24}/>} color="purple" />
+            </div>
+            
+            <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
+                <h2 className="text-lg font-semibold text-white mb-4">시간에 따른 재밍 지수 변화</h2>
+                 <ResponsiveContainer width="100%" height={300}>
+                    <LineChart data={analysisData.timeline.filter(d => d.timestamp > new Date().getTime() - 7 * 24*3600*1000)}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" />
+                        <XAxis dataKey="timestamp" stroke="#A0AEC0" type="number" domain={['dataMin', 'dataMax']} tickFormatter={(tick) => formatDate(tick, 'date')} />
+                        <YAxis stroke="#A0AEC0" />
+                        <Tooltip contentStyle={{ backgroundColor: '#1A202C' }} labelFormatter={(unixTime) => formatDate(unixTime, 'full')} />
+                        <Legend />
+                        <Line type="monotone" dataKey="jammingIndex" name="재밍 지수 (m)" stroke="#f87171" dot={false} />
+                    </LineChart>
+                 </ResponsiveContainer>
+            </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
-                    <h2 className="text-lg font-semibold text-white mb-4">시간에 따른 GNSS 오차 및 우주기상</h2>
-                     <ResponsiveContainer width="100%" height={300}>
-                        <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" />
-                            <XAxis dataKey="timestamp" stroke="#A0AEC0" type="number" domain={['dataMin', 'dataMax']} tickFormatter={(tick) => formatDate(tick, 'time')} />
-                            <YAxis yAxisId="left" stroke="#F56565" domain={[0, 'dataMax + 20']} />
-                            <YAxis yAxisId="right" orientation="right" stroke="#A0AEC0" />
-                            <Tooltip contentStyle={{ backgroundColor: '#1A202C' }} labelFormatter={(unixTime) => formatDate(unixTime, 'full')} />
-                            <Legend />
-                            <Line yAxisId="left" type="monotone" dataKey="fore_gnss" name="GNSS 오차(m)" stroke="#f87171" dot={false} />
-                            <Line yAxisId="right" type="monotone" dataKey="kp10" name="Kp 지수" stroke="#facc15" dot={false} />
-                        </LineChart>
-                     </ResponsiveContainer>
-                </div>
                  <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
-                    <h2 className="text-lg font-semibold text-white mb-4">재밍 의심 지역 분석</h2>
-                     <MapContainer key={profile.location.coords.lat} center={[profile.location.coords.lat, profile.location.coords.lon]} zoom={8} style={{ height: "300px", width: "100%", borderRadius: "0.75rem" }}>
-                         <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; CARTO' />
-                         {jammingEvents.map(event => (
-                            <LeafletCircle
-                                key={event.id}
-                                center={[event.lat, event.lon]}
-                                radius={event.radius}
-                                pathOptions={{ color: '#f87171', fillColor: '#f87171', fillOpacity: 0.3 }}>
-                                <LeafletTooltip>
-                                    <strong>재밍 발생 의심</strong><br/>
-                                    위치: {event.lat.toFixed(3)}, {event.lon.toFixed(3)}<br/>
-                                    최대 오차: {event.magnitude}m
-                                </LeafletTooltip>
-                            </LeafletCircle>
-                         ))}
-                     </MapContainer>
+                    <h2 className="text-lg font-semibold text-white mb-4">재밍 강도 및 지속 시간 관계</h2>
+                    <ResponsiveContainer width="100%" height={300}>
+                         <ScatterChart>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" />
+                            <XAxis type="number" dataKey="duration" name="지속 시간" unit="분" stroke="#A0AEC0" />
+                            <YAxis type="number" dataKey="magnitude" name="최대 강도" unit="m" stroke="#A0AEC0" />
+                            <Tooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{ backgroundColor: '#1A202C' }}/>
+                            <Scatter name="재밍 이벤트" data={analysisData.scatterData} fill="#a78bfa" />
+                        </ScatterChart>
+                    </ResponsiveContainer>
+                </div>
+                <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
+                    <h2 className="text-lg font-semibold text-white mb-4">시간대별 재밍 발생 빈도</h2>
+                    <ResponsiveContainer width="100%" height={300}>
+                        <BarChart data={analysisData.heatmapData}>
+                             <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" />
+                             <XAxis dataKey="hour" stroke="#A0AEC0"/>
+                             <YAxis stroke="#A0AEC0" allowDecimals={false}/>
+                             <Tooltip contentStyle={{ backgroundColor: '#1A202C' }}/>
+                             <Legend />
+                             <Bar dataKey="value" fill="#fca5a5" name="발생 건수"/>
+                        </BarChart>
+                    </ResponsiveContainer>
                 </div>
             </div>
         </div>
@@ -1158,27 +1318,42 @@ const SettingsView = ({ profiles, setProfiles, activeProfile, setActiveProfileId
             <div><h3 className="text-lg font-semibold text-white mb-3">주요 장비 설정</h3><div className="space-y-4">{localProfile.equipment.map(eq => (<div key={eq.id} className="bg-gray-700/50 p-4 rounded-lg space-y-4"><div className="flex justify-between items-center"><input type="text" value={eq.name} onChange={e => handleEquipmentChange(eq.id, 'name', e.target.value)} className="bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white" placeholder="장비명" /><button onClick={() => removeEquipment(eq.id)} className="text-red-400 hover:text-red-300 p-2"><Trash2 className="w-5 h-5" /></button></div><div className="flex items-center justify-between"><label className="flex items-center space-x-2 cursor-pointer"><input type="checkbox" checked={eq.usesGeoData} onChange={e => handleEquipmentChange(eq.id, 'usesGeoData', e.target.checked)} className="h-4 w-4 rounded bg-gray-900 border-gray-600 text-cyan-500 focus:ring-cyan-500" /><span>위치 정보 사용</span></label><div className="flex items-center space-x-2 cursor-pointer"><span className={`px-2 py-1 text-xs rounded-md ${eq.thresholdMode === 'manual' ? 'bg-blue-600':'bg-gray-600'}`} onClick={() => handleEquipmentChange(eq.id, 'thresholdMode', 'manual')}>수동</span><span className={`px-2 py-1 text-xs rounded-md ${eq.thresholdMode === 'auto' ? 'bg-blue-600':'bg-gray-600'}`} onClick={() => handleEquipmentChange(eq.id, 'thresholdMode', 'auto')}>자동</span></div></div><div>{eq.thresholdMode === 'manual' ? (<div className="flex items-center space-x-2"><input type="range" min="1" max="30" step="0.5" value={eq.manualThreshold} onChange={e => handleEquipmentChange(eq.id, 'manualThreshold', parseFloat(e.target.value))} className="w-full" /><span className="text-cyan-400 font-mono w-16 text-center">{eq.manualThreshold.toFixed(1)}m</span></div>) : (<div className="text-center bg-gray-800 p-2 rounded-md"><span className="text-gray-400">자동 임계값: </span><span className="font-bold text-white">{eq.autoThreshold ? `${eq.autoThreshold.toFixed(2)}m` : '데이터 부족'}</span></div>)}</div></div>))}</div><div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4 mt-4"><button onClick={addEquipment} className="w-full bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><Plus className="w-5 h-5" /><span>장비 추가</span></button><button className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><BrainCircuit size={20}/><span>자동 임계값 전체 재계산</span></button></div></div>
         </div><div className="mt-8 flex justify-end"><button onClick={handleSave} className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-6 rounded-lg flex items-center space-x-2"><Save className="w-5 h-5" /><span>저장</span></button></div></div>);
 };
-const DeveloperTestView = ({ setLogs, profile, setForecastData, setJammingEvents, goBack }) => {
+const DeveloperTestView = ({ setLogs, profile, setForecastData, setJammingEvents, allForecastData, goBack }) => {
     const generateMockLogs = () => { if (!window.confirm("기존 피드백을 삭제하고, 최근 100일간의 시연용 테스트 데이터를 대량 생성합니까?")) return; const newLogs = []; const today = new Date(); for (let i = 0; i < 100; i++) { const date = new Date(today); date.setDate(today.getDate() - i); const logCount = Math.floor(Math.random() * 5) + 5; for (let j = 0; j < logCount; j++) { const eq = profile.equipment[Math.floor(Math.random() * profile.equipment.length)]; let successScore; let baseError; const outcomeRoll = Math.random(); if (outcomeRoll < 0.85) { successScore = Math.floor(8 + Math.random() * 3); baseError = 2 + Math.random() * (eq.manualThreshold * 0.5); } else if (outcomeRoll < 0.95) { successScore = Math.floor(4 + Math.random() * 4); baseError = eq.manualThreshold * 0.7 + Math.random() * (eq.manualThreshold * 0.3); } else { successScore = Math.floor(1 + Math.random() * 3); baseError = eq.manualThreshold * 1.1 + Math.random() * 5; } const startTime = new Date(date); startTime.setHours(Math.floor(Math.random() * 23), Math.floor(Math.random() * 60)); const endTime = new Date(startTime.getTime() + (30 + Math.floor(Math.random() * 90)) * 60000); const data = []; let curTime = new Date(startTime); const p0 = [profile.location.coords.lat+Math.random()*0.5, profile.location.coords.lon+Math.random()*0.5]; const p1 = [profile.location.coords.lat+Math.random()*0.5, profile.location.coords.lon+Math.random()*0.5]; const p2 = [profile.location.coords.lat+Math.random()*0.5, profile.location.coords.lon+Math.random()*0.5]; let step = 0; while (curTime < endTime) { const err = Math.max(1.0, baseError + (Math.random() - 0.5) * 4); const entry = { date: curTime.toISOString(), error_rate: parseFloat(err.toFixed(2))}; if (eq.usesGeoData) { const progress = step / ((endTime.getTime() - startTime.getTime()) / 60000 || 1); const pos = getPointOnBezierCurve(progress, p0, p1, p2); entry.lat = pos[0]; entry.lon = pos[1]; } data.push(entry); curTime.setMinutes(curTime.getMinutes() + 1); step++; } newLogs.push({ id: Date.now() + i * 100 + j, startTime: startTime.toISOString(), endTime: endTime.toISOString(), equipment: eq.name, successScore, gnssErrorData: data }); } } setLogs(newLogs.sort((a, b) => new Date(b.startTime) - new Date(a.startTime))); alert(`${newLogs.length}개의 테스트 피드백이 생성되었습니다.`); };
     const clearLogs = () => { if (window.confirm("모든 피드백 데이터를 삭제하시겠습니까?")) { setLogs([]); alert("모든 피드백이 삭제되었습니다."); }};
     const resetAppState = () => { if (window.confirm("앱의 모든 로컬 데이터(프로필, 피드백 로그)를 삭제하고 초기 상태로 되돌리시겠습니까?")) { localStorage.clear(); alert("앱 상태가 초기화되었습니다. 페이지를 새로고침합니다."); window.location.reload(); }};
     
     const simulateJammingEvent = () => {
-        const newEvent = {
-            id: Date.now(),
-            lat: 37.5 + (Math.random() - 0.5) * 1, // Near DMZ
-            lon: 127.0 + (Math.random() - 0.5) * 1,
-            radius: 20000 + Math.random() * 30000, // 20-50km radius
-            magnitude: 50 + Math.random() * 50, // 50-100m error spike
-            timestamp: new Date().getTime() + (Math.random() * 6) * 3600 * 1000, // In the next 6 hours
-        };
-        setJammingEvents(prev => [...prev, newEvent]);
-        alert(`시연용 GPS 재밍 이벤트가 생성되었습니다. 'GPS 교란 분석' 탭에서 확인하세요.`);
+        const newEvents = [];
+        const now = new Date();
+        // Simulate for today and the last 6 days
+        for (let i = 0; i < 7; i++) {
+            const date = new Date(now);
+            date.setDate(now.getDate() - i);
+            const numEvents = 1 + Math.floor(Math.random() * 3); // 1-3 events per day
+            for (let j = 0; j < numEvents; j++) {
+                const startHour = Math.floor(Math.random() * 24);
+                const startMinute = Math.floor(Math.random() * 60);
+                const startTime = new Date(date);
+                startTime.setHours(startHour, startMinute, 0, 0);
+
+                const endTime = new Date(startTime.getTime() + (20 + Math.random() * 20) * 60000); // 20-40 min duration
+
+                newEvents.push({
+                    id: startTime.getTime() + j,
+                    startTime: startTime.getTime(),
+                    endTime: endTime.getTime(),
+                    magnitude: 40 + Math.random() * 60, // 40-100m error spike
+                });
+            }
+        }
+        setJammingEvents(newEvents);
+        alert(`지난 7일간의 시연용 GPS 재밍 이벤트 ${newEvents.length}개가 생성되었습니다. 'GPS 교란 분석' 탭에서 확인하세요.`);
     };
 
     const simulateSpaceWeather = (type) => {
         setForecastData(prevData => {
-            const newData = JSON.parse(JSON.stringify(prevData));
+            const newData = JSON.parse(JSON.stringify(allForecastData)); // Use original data for clean slate
             const now = new Date().getTime();
             const targetTime = now + (3 + Math.random() * 5) * 3600 * 1000; // 3-8 hours from now
 
