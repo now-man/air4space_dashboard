@@ -1,21 +1,21 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceArea, BarChart, Bar, ScatterChart, Scatter, ZAxis, Cell, Label } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceArea, BarChart, Bar, ScatterChart, Scatter, Cell, Label } from 'recharts';
 import { DayPicker } from 'react-day-picker';
 import { ko } from 'date-fns/locale';
-import { Zap, Settings, ShieldAlert, BotMessageSquare, Plus, Trash2, Save, ArrowLeft, UploadCloud, TestTube2, BrainCircuit, Eraser, Lightbulb, RefreshCw, PlayCircle, MapPin, Edit3, Compass, Activity, Calendar as CalendarIcon, MoreVertical, X, Edit, Home, BarChart3, Target, PlusCircle, Pencil, Square, Circle, Triangle, Star, Diamond, Hexagon, Aperture, Search, ChevronDown, Sun, Wind } from 'lucide-react';
+import { Zap, Settings, ShieldAlert, BotMessageSquare, Plus, Trash2, Save, ArrowLeft, UploadCloud, TestTube2, BrainCircuit, Eraser, Lightbulb, RefreshCw, PlayCircle, MapPin, Edit3, Compass, Activity, Calendar as CalendarIcon, MoreVertical, X, Edit, Home, BarChart3, Target, PlusCircle, Pencil, Square, Circle, Triangle, Star, Diamond, Hexagon, Aperture, Search, ChevronDown, Sun, Wind, Cloud, Thermometer } from 'lucide-react';
 import { MapContainer, TileLayer, CircleMarker, Tooltip as LeafletTooltip, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'react-day-picker/dist/style.css';
 
 // --- Helper Functions ---
+const formatNumber = (num, places = 2) => num !== null && num !== undefined ? num.toFixed(places) : 'N/A';
 const getErrorColor = (error, threshold = 10.0) => { if (error > threshold) return '#f87171'; if (error > threshold * 0.7) return '#facc15'; return '#4ade80'; };
 const getSuccessScoreInfo = (score) => { if (score >= 8) return { label: "성공", color: "text-green-400", dotClass: "bg-green-500" }; if (score >= 4 && score < 8) return { label: "보통", color: "text-yellow-400", dotClass: "bg-yellow-500" }; return { label: "실패", color: "text-red-400", dotClass: "bg-red-500" }; };
-const formatDate = (dateString, format = 'full') => { if (!dateString) return 'N/A'; const date = new Date(dateString); const options = { full: { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }, time: { hour: '2-digit', minute: '2-digit', hour12: false }, date: { month: '2-digit', day: '2-digit' }}; return new Intl.DateTimeFormat('ko-KR', options[format]).format(date); };
+const formatDate = (dateString, format = 'full') => { if (!dateString) return 'N/A'; const date = new Date(dateString); const options = { full: { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }, time: { hour: '2-digit', minute: '2-digit', hour12: false }, date: { year: 'numeric', month: '2-digit', day: '2-digit' }}; return new Intl.DateTimeFormat('ko-KR', options[format]).format(date); };
 const toLocalISOString = (date) => new Date(date.getTime() - (date.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
 const getPointOnBezierCurve = (t, p0, p1, p2) => { const [x0, y0] = p0; const [x1, y1] = p1; const [x2, y2] = p2; const u = 1 - t; const tt = t * t; const uu = u * u; const x = uu * x0 + 2 * u * t * x1 + tt * x2; const y = uu * y0 + 2 * u * t * y1 + tt * y2; return [x, y]; };
 const formatDateKey = (d) => { if(!d) return null; d = new Date(d); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
-const formatNumber = (num, places = 2) => num !== null && num !== undefined ? num.toFixed(places) : 'N/A';
 const parseStyledText = (text) => {
     const keywordStyles = { "위험": "text-red-400 font-bold", "주의": "text-yellow-400 font-bold", "안정": "text-green-400 font-bold" };
     const parts = text.split(/(\*\*.*?\*\*|\b위험\b|\b주의\b|\b안정\b)/g);
@@ -64,7 +64,6 @@ const DEFAULT_PROFILES_DATA = [
     { name: "제38전투비행전대", lat: 35.926051, lon: 126.615725 }
 ];
 
-
 // ####################################################################
 // ## ALL COMPONENT DEFINITIONS (DECLARED BEFORE `App`)
 // ####################################################################
@@ -98,6 +97,8 @@ const CustomScatterTooltip = ({ active, payload }) => {
     }
     return null;
 };
+
+// --- View-Specific Components ---
 const PredictionAccuracyAnalysis = ({ logs, allForecastData }) => {
     const [selectedLogId, setSelectedLogId] = useState('');
     
@@ -193,19 +194,116 @@ const PredictionAccuracyAnalysis = ({ logs, allForecastData }) => {
         </div>
     );
 };
-const FeedbackMap = ({ data, equipment, isAnimating, animationProgress, showClouds }) => { 
+const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold, recommendedRange }) => {
+    const dataKeys = {
+        fore_gnss: { name: '예측 GNSS', color: '#f87171', axis: 'left' },
+        real_gnss: { name: '실제 GNSS', color: '#fca5a5', axis: 'left' },
+        tec_value: { name: 'TEC', color: '#60a5fa', axis: 'right' },
+        xrsb:      { name: 'XRSB', color: '#a78bfa', axis: 'right' },
+        kp:        { name: 'Kp', color: '#facc15', axis: 'right' },
+        dst:       { name: 'Dst', color: '#4ade80', axis: 'right' },
+    };
+    const [visibleData, setVisibleData] = useState({ fore_gnss: true, real_gnss: false, tec_value: true, xrsb: false, kp: false, dst: false });
+    const [timeRange, setTimeRange] = useState({ start: null, end: null });
+
+    useEffect(() => {
+        if (allForecastData && allForecastData.length > 0) {
+            const now = new Date().getTime();
+            const defaultStart = now - 12 * 3600 * 1000;
+            const defaultEnd = now + 24 * 3600 * 1000;
+            const dataMin = allForecastData[0].timestamp;
+            const dataMax = allForecastData[allForecastData.length - 1].timestamp;
+            setTimeRange({ start: Math.max(defaultStart, dataMin), end: Math.min(defaultEnd, dataMax) });
+        }
+    }, [allForecastData]);
+
+    const dataForChart = useMemo(() => {
+        if (!allForecastData || !timeRange.start) return [];
+        const cutoffDate = new Date();
+        cutoffDate.setMinutes(cutoffDate.getMinutes() - 10);
+        cutoffDate.setMinutes(0, 0, 0);
+        const cutoffTimestamp = cutoffDate.getTime();
+        return allForecastData
+            .filter(d => d.timestamp >= timeRange.start && d.timestamp <= timeRange.end)
+            .map(d => ({
+                ...d,
+                real_gnss: d.timestamp > cutoffTimestamp ? null : d.real_gnss
+            }));
+    }, [allForecastData, timeRange]);
+
+    const nowTimestamp = new Date().getTime();
+    const isNowInRange = nowTimestamp >= (timeRange.start || 0) && nowTimestamp <= (timeRange.end || Infinity);
+    const niceTicks = useMemo(() => {
+        if (!timeRange.start) return [];
+        return generateNiceTicks(timeRange.start, timeRange.end);
+    }, [timeRange]);
+    const formatXAxis = (tick) => {
+        if (!timeRange.start) return '';
+        const duration = timeRange.end - timeRange.start;
+        return duration <= 2 * 24 * 3600 * 1000 ? formatDate(tick, 'time') : formatDate(tick, 'date');
+    };
+
+    return (
+        <div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700">
+            <h2 className="text-lg font-semibold mb-4 text-white">GNSS 오차 및 우주기상 예측</h2>
+            <div style={{width: '100%', height: 250}}>
+                {forecastStatus.isLoading ? <div className="flex items-center justify-center h-full text-gray-400">데이터 로딩 중...</div>
+                 : forecastStatus.error ? <div className="flex items-center justify-center h-full text-red-400">{forecastStatus.error}</div>
+                 : dataForChart.length < 2 ? <div className="flex items-center justify-center h-full text-gray-400">표시할 데이터가 없습니다.</div>
+                 : (<ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={dataForChart} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" />
+                        <XAxis dataKey="timestamp" stroke="#A0AEC0" type="number" domain={[timeRange.start, timeRange.end]} ticks={niceTicks} tickFormatter={formatXAxis} />
+                        <YAxis yAxisId="left" label={{ value: 'GNSS 오차(m)', angle: -90, position: 'insideLeft', fill: '#A0AEC0' }} stroke="#F56565" />
+                        <YAxis yAxisId="right" orientation="right" label={{ value: '우주기상 지수', angle: 90, position: 'insideRight', fill: '#A0AEC0' }} stroke="#A0AEC0" />
+                        <Tooltip contentStyle={{ backgroundColor: '#1A202C' }} labelFormatter={(unixTime) => formatDate(unixTime, 'full')} formatter={(value) => formatNumber(value)}/>
+                        <Legend wrapperStyle={{fontSize: "12px"}}/>
+                        {Object.entries(dataKeys).map(([key, { name, color, axis }]) => (
+                            visibleData[key] && <Line key={key} yAxisId={axis} type="monotone" dataKey={key} name={name} stroke={color} dot={false} connectNulls />
+                        ))}
+                        {visibleData['fore_gnss'] && <ReferenceLine yAxisId="left" y={activeUnitThreshold} label={{ value: "부대 임계값", fill: "#4FD1C5" }} stroke="#4FD1C5" strokeDasharray="4 4" />}
+                        {isNowInRange && <ReferenceLine yAxisId="left" x={nowTimestamp} stroke="#fbbf24" strokeWidth={2} label={{ value: '현재', position: 'insideTop', fill: '#fbbf24' }} />}
+                        {recommendedRange && <ReferenceArea yAxisId="left" x1={recommendedRange.start} x2={recommendedRange.end} stroke="#4ade80" strokeOpacity={0.6} fill="#4ade80" fillOpacity={0.2} label={{ value: "추천 시간", position: "insideTop", fill: "#4ade80" }}/>}
+                    </LineChart>
+                </ResponsiveContainer>)}
+            </div>
+            <div className="flex flex-col xl:flex-row justify-between items-center mt-4 pt-4 border-t border-gray-700 gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-x-4 gap-y-2 w-full">
+                    {Object.entries(dataKeys).map(([key, {name}]) => (
+                        <label key={key} className="flex items-center gap-2 cursor-pointer text-sm text-gray-300">
+                            <input type="checkbox" checked={visibleData[key]} onChange={e => setVisibleData(v => ({...v, [key]: e.target.checked}))} className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-500 rounded" />
+                            {name}
+                        </label>
+                    ))}
+                </div>
+                {timeRange.start && <div className="flex items-center gap-2 w-full xl:w-auto pt-4 xl:pt-0 border-t border-gray-700 xl:border-none">
+                    <input type="datetime-local" value={toLocalISOString(new Date(timeRange.start))} onChange={e => setTimeRange(r => ({...r, start: new Date(e.target.value).getTime()}))} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-full"/>
+                    <span className="text-gray-400">-</span>
+                    <input type="datetime-local" value={toLocalISOString(new Date(timeRange.end))} onChange={e => setTimeRange(r => ({...r, end: new Date(e.target.value).getTime()}))} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-full"/>
+                </div>}
+            </div>
+        </div>
+    );
+};
+const LiveMap = ({threshold, center}) => {
+    const [showClouds, setShowClouds] = useState(true);
+    const koreaBounds = { minLat: 33.0, maxLat: 38.5, minLon: 125.0, maxLon: 130.0 };
     // ❗ OpenWeatherMap에서 발급받은 무료 API 키를 여기에 입력하세요.
     const OWM_API_KEY = "5e51e99c2fa4d10dbca840c7c1e1781e";
-    const activeThreshold = equipment.thresholdMode === 'auto' && equipment.autoThreshold ? equipment.autoThreshold : equipment.manualThreshold; 
-    const bounds = useMemo(() => data.length > 0 ? L.latLngBounds(data.map(p => [p.lat, p.lon])) : null, [data]); 
-    const animatedPosition = useMemo(() => { if(!isAnimating || data.length < 2) return null; const totalPoints = data.length - 1; const currentIndex = Math.min(Math.floor(animationProgress * totalPoints), totalPoints - 1); const nextIndex = Math.min(currentIndex + 1, totalPoints); const segmentProgress = (animationProgress * totalPoints) - currentIndex; const p1 = data[currentIndex]; const p2 = data[nextIndex]; return { lat: p1.lat + (p2.lat - p1.lat) * segmentProgress, lon: p1.lon + (p2.lon - p1.lon) * segmentProgress, error: p1.error_rate }; }, [isAnimating, animationProgress, data]); 
+    const [aircrafts, setAircrafts] = useState(() => Array.from({ length: 20 }).map((_, i) => ({
+        id: i,
+        p0: [ koreaBounds.minLat + Math.random() * (koreaBounds.maxLat - koreaBounds.minLat), koreaBounds.minLon + Math.random() * (koreaBounds.maxLon - koreaBounds.minLon) ],
+        p1: [ koreaBounds.minLat + Math.random() * (koreaBounds.maxLat - koreaBounds.minLat), koreaBounds.minLon + Math.random() * (koreaBounds.maxLon - koreaBounds.minLon) ],
+        p2: [ koreaBounds.minLat + Math.random() * (koreaBounds.maxLat - koreaBounds.minLat), koreaBounds.minLon + Math.random() * (koreaBounds.maxLon - koreaBounds.minLon) ],
+        progress: Math.random(),
+        speed: 0.003 + Math.random() * 0.005,
+        error: 5 + Math.random() * 5
+    })));
 
-    // Dynamic opacity for cloud timelapse effect
-    const cloudOpacity = isAnimating ? 0.3 + 0.4 * Math.abs(Math.sin(animationProgress * Math.PI * 8)) : 0.6;
+    useEffect(() => { const timer = setInterval(() => setAircrafts(prev => prev.map(ac => ({ ...ac, progress: (ac.progress + ac.speed) % 1, error: Math.max(3.0, ac.error + (Math.random() - 0.5) * 2) }))), 2000); return () => clearInterval(timer); }, []);
 
-    return (<div className="mt-2 h-56 rounded-lg overflow-hidden relative"><MapContainer center={data[0] ? [data[0].lat, data[0].lon] : [36.6, 127.4]} zoom={11} style={{ height: "100%", width: "100%" }} scrollWheelZoom={false}> <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; CARTO' /> {showClouds && OWM_API_KEY !== "5e51e99c2fa4d10dbca840c7c1e1781e" && <TileLayer key={cloudOpacity} url={`https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid=${OWM_API_KEY}`} attribution='&copy; OpenWeatherMap' zIndex={2} opacity={cloudOpacity}/>} {isAnimating ? (<Polyline positions={data.map(p => [p.lat, p.lon])} color="#6b7280" weight={3} dashArray="5, 10" />) : (data.slice(1).map((p, i) => (<Polyline key={i} positions={[[data[i].lat, data[i].lon], [p.lat, p.lon]]} color={getErrorColor(data[i].error_rate, activeThreshold)} weight={5} />)))} {animatedPosition && <CircleMarker center={animatedPosition} radius={7} pathOptions={{ color: '#fff', fillColor: getErrorColor(animatedPosition.error, activeThreshold), weight: 2, fillOpacity: 1 }} />} <AutoFitBounds bounds={bounds} /> </MapContainer></div>); 
+    return (<div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700 h-96 flex flex-col"><h2 className="text-lg font-semibold mb-4 text-white">실시간 항적 및 기상</h2><div className="flex-grow relative"><MapContainer key={center.lat + "-" + center.lon} center={[center.lat, center.lon]} zoom={9} style={{ height: "100%", width: "100%", borderRadius: "0.75rem", backgroundColor: "#333" }}> <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; CARTO' /> {showClouds && OWM_API_KEY !== "5e51e99c2fa4d10dbca840c7c1e1781e" && <TileLayer url={`https://tile.openweathermap.org/map/precipitation_new/{z}/{x}/{y}.png?appid=${OWM_API_KEY}`} attribution='&copy; OpenWeatherMap' zIndex={2} opacity={0.7}/>} {aircrafts.map(ac => { let pos = getPointOnBezierCurve(ac.progress, ac.p0, ac.p1, ac.p2); return (<CircleMarker key={ac.id} center={pos} radius={6} pathOptions={{ color: getErrorColor(ac.error, threshold), fillColor: getErrorColor(ac.error, threshold), fillOpacity: 0.8 }}><LeafletTooltip>✈️ ID: {ac.id}<br />GNSS 오차: {formatNumber(ac.error)}m</LeafletTooltip></CircleMarker>); })} </MapContainer></div><div className="pt-2 mt-2 border-t border-gray-700"><label className="flex items-center gap-2 cursor-pointer text-sm text-gray-300"><input type="checkbox" checked={showClouds} onChange={e => setShowClouds(e.target.checked)} className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-500 rounded" />기상 오버레이 표시</label></div> </div>);
 };
-const FeedbackChart = ({ data, equipment }) => { const activeThreshold = equipment.thresholdMode === 'auto' && equipment.autoThreshold ? equipment.autoThreshold : equipment.manualThreshold; const segments = useMemo(() => { const segs = []; let cur = null; data.forEach(d => { if (d.error_rate > activeThreshold) { if (!cur) cur = { x1: d.date, x2: d.date }; else cur.x2 = d.date; } else { if (cur) { segs.push(cur); cur = null; } } }); if (cur) segs.push(cur); return segs; }, [data, activeThreshold]); return (<div className="mt-4 h-40"><ResponsiveContainer width="100%" height="100%"><LineChart data={data} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}> <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" /><XAxis dataKey="date" stroke="#A0AEC0" tick={{ fontSize: 10 }} tickFormatter={(tick) => formatDate(tick, 'time')} /> <YAxis stroke="#A0AEC0" tick={{ fontSize: 10 }} domain={[0, 'dataMax + 2']} tickFormatter={(tick) => formatNumber(tick, 1)} /> <Tooltip contentStyle={{ backgroundColor: '#1A202C' }} labelFormatter={(label) => formatDate(label)} formatter={(value) => formatNumber(value)} /> <Line type="monotone" dataKey="error_rate" name="GNSS 오차(m)" stroke="#F56565" strokeWidth={2} dot={false} /> {segments.map((seg, i) => <ReferenceArea key={i} x1={seg.x1} x2={seg.x2} stroke="none" fill="#f56565" fillOpacity={0.3} />)} <ReferenceLine y={activeThreshold} label={{ value: "임계값", position: 'insideTopLeft', fill: '#4FD1C5', fontSize: 10 }} stroke="#4FD1C5" strokeDasharray="3 3" /> </LineChart></ResponsiveContainer></div>); };
 const XAIAnalysisReport = ({ allForecastData, threshold }) => {
     const analysis = useMemo(() => {
         if (!allForecastData || allForecastData.length === 0) return null;
