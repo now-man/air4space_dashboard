@@ -462,52 +462,73 @@ const OptimalTimeRecommender = ({ allForecastData, onRecommendation }) => {
     const [duration, setDuration] = useState(3);
     const [result, setResult] = useState(null);
 
+    const getKpStatus = (kp) => {
+        if (kp < 4) return { text: "안정", color: "text-green-400" };
+        if (kp < 6) return { text: "보통", color: "text-yellow-400" };
+        return { text: "불안", color: "text-red-400" };
+    };
+
     const handleRecommend = () => {
         const searchStartTs = new Date(searchStart).getTime();
         const searchEndTs = new Date(searchEnd).getTime();
-
-        // Data points are hourly, so duration is in hours.
         const durationInPoints = duration;
 
         const relevantData = allForecastData.filter(d => d.timestamp >= searchStartTs && d.timestamp <= searchEndTs);
         if (relevantData.length < durationInPoints) {
-            setResult("해당 시간 범위의 예측 데이터가 작전 시간보다 짧습니다.");
+            setResult({ error: "해당 시간 범위의 예측 데이터가 작전 시간보다 짧습니다." });
             onRecommendation(null);
             return;
         }
 
         let minSum = Infinity;
-        let bestStartTime = null;
+        let bestWindow = null;
 
         for (let i = 0; i <= relevantData.length - durationInPoints; i++) {
             const window = relevantData.slice(i, i + durationInPoints);
             const currentSum = window.reduce((sum, d) => sum + d.fore_gnss, 0);
-
             if (currentSum < minSum) {
                 minSum = currentSum;
-                bestStartTime = window[0].timestamp;
+                bestWindow = window;
             }
         }
 
-        if (bestStartTime) {
+        if (bestWindow) {
+            const bestStartTime = bestWindow[0].timestamp;
             const recommendedEnd = bestStartTime + duration * 3600 * 1000;
-            setResult(`추천 작전 시간: ${formatDate(bestStartTime, 'full')} ~ ${formatDate(recommendedEnd, 'time')}`);
+            
+            const avgError = minSum / duration;
+            const maxError = Math.max(...bestWindow.map(d => d.fore_gnss));
+            const avgKp = bestWindow.reduce((s, d) => s + d.kp, 0) / duration;
+            const overallAvgError = relevantData.reduce((s,d) => s + d.fore_gnss, 0) / relevantData.length;
+            const improvement = ((overallAvgError - avgError) / overallAvgError) * 100;
+
+            setResult({ 
+                time: `추천 작전 시간: ${formatDate(bestStartTime, 'full')} ~ ${formatDate(recommendedEnd, 'time')}`,
+                analysis: {
+                    avgError,
+                    maxError,
+                    avgKp,
+                    kpStatus: getKpStatus(avgKp),
+                    improvement,
+                },
+                error: null
+            });
             onRecommendation({start: bestStartTime, end: recommendedEnd});
         } else {
-            setResult("추천 가능한 시간대를 찾을 수 없습니다.");
+            setResult({ error: "추천 가능한 시간대를 찾을 수 없습니다." });
             onRecommendation(null);
         }
     };
 
     return (
-        <div className="bg-gray-800 p-4 rounded-xl border border-gray-700">
-            <h2 className="text-lg font-semibold mb-4 text-white">최적 작전 시간 추천</h2>
+        <div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700">
+            <h2 className="text-lg font-semibold mb-4 text-white">최적 작전 시간 추천 (XAI)</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
                 <div>
                     <label className="text-xs text-gray-400">탐색 시작</label>
                     <input type="datetime-local" value={searchStart} min={toLocalISOString(new Date())} onChange={e => setSearchStart(e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm" />
                 </div>
-                 <div>
+                <div>
                     <label className="text-xs text-gray-400">탐색 종료</label>
                     <input type="datetime-local" value={searchEnd} min={searchStart} onChange={e => setSearchEnd(e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm" />
                 </div>
@@ -517,7 +538,22 @@ const OptimalTimeRecommender = ({ allForecastData, onRecommendation }) => {
                 </div>
                 <button onClick={handleRecommend} className="bg-blue-600 hover:bg-blue-700 rounded-lg p-2 flex items-center justify-center gap-2 h-10"><Search size={16}/> 추천 받기</button>
             </div>
-            {result && <p className="text-center text-cyan-400 mt-4 font-semibold">{result}</p>}
+            {result && !result.error && (
+                <div className="mt-4 pt-4 border-t border-gray-700 space-y-3">
+                    <p className="text-center text-cyan-400 font-semibold">{result.time}</p>
+                    <div className="bg-gray-900/50 p-3 rounded-md text-sm">
+                        <p className="text-gray-300 mb-2">
+                           해당 시간대는 탐색 기간 전체 평균 오차 대비 **약 {formatNumber(result.analysis.improvement, 0)}% 낮은** GNSS 오차가 예측되어 작전 수행에 가장 안정적인 환경을 제공합니다.
+                        </p>
+                        <ul className="text-gray-400 space-y-1 text-xs">
+                            <li className="flex justify-between"><span>평균 예측 오차:</span> <strong>{formatNumber(result.analysis.avgError)}m</strong></li>
+                            <li className="flex justify-between"><span>최대 예측 오차:</span> <strong>{formatNumber(result.analysis.maxError)}m</strong></li>
+                            <li className="flex justify-between"><span>평균 Kp 지수:</span> <strong className={result.analysis.kpStatus.color}>{formatNumber(result.analysis.avgKp, 1)} ({result.analysis.kpStatus.text})</strong></li>
+                        </ul>
+                    </div>
+                </div>
+            )}
+            {result && result.error && <p className="text-center text-red-400 mt-4 font-semibold">{result.error}</p>}
         </div>
     );
 };
@@ -972,7 +1008,14 @@ const DashboardView = ({ profile, allForecastData, forecastStatus, logs, deleteL
     };
 
     return (<>
-        <style>{`.rdp-day_selected, .rdp-day_selected:focus-visible, .rdp-day_selected:hover { background-color: #0ea5e9 !important; color: white !important; } .rdp-button:hover:not([disabled]):not(.rdp-day_selected) { background-color: #374151 !important; } .rdp-day_today:not(.rdp-day_selected) { border: 1px solid #0ea5e9; color: #0ea5e9 !important; } .rdp { color: #d1d5db; --rdp-cell-size: 48px; } .rdp-nav_button { color: #0ea5e9 !important; }`}</style>
+        <style>{`
+            .rdp-day_selected, .rdp-day_selected:focus-visible, .rdp-day_selected:hover { background-color: #0ea5e9 !important; color: white !important; } 
+            .rdp-button:hover:not([disabled]):not(.rdp-day_selected) { background-color: #374151 !important; } 
+            .rdp-day_today:not(.rdp-day_selected) { border: 1px solid #0ea5e9; color: #0ea5e9 !important; } 
+            .rdp { color: #d1d5db; --rdp-cell-size: 48px; } 
+            .rdp-nav_button { color: #0ea5e9 !important; }
+            .weather-tile-layer { filter: saturate(200%) brightness(80%) hue-rotate(-15deg); }
+        `}</style>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-6">
                 <ForecastGraph allForecastData={allForecastData} forecastStatus={forecastStatus} activeUnitThreshold={activeUnitThreshold} recommendedRange={recommendedRange} />
@@ -982,10 +1025,20 @@ const DashboardView = ({ profile, allForecastData, forecastStatus, logs, deleteL
                     <div className="flex justify-between items-center mb-4"><h2 className="text-lg font-semibold text-white flex items-center"><CalendarIcon size={20} className="inline-block mr-2" />작전 캘린더 & 피드백 로그</h2>{selectedDate && <button onClick={() => setSelectedDate(null)} className="text-sm bg-cyan-600 hover:bg-cyan-700 px-3 py-1 rounded-md">전체 로그 보기</button>}</div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="flex justify-center"><DayPicker mode="single" selected={selectedDate} onSelect={setSelectedDate} locale={ko} components={{ DayContent: DayContentWithDots }} /></div>
-                        <div className="space-y-2 max-h-[350px] overflow-y-auto pr-2"><h3 className="font-semibold text-gray-300">{selectedDate ? formatDate(selectedDate, 'date') : '최근'} 피드백 <span className="text-cyan-400">({filteredLogs.length}건)</span></h3>{filteredLogs.length > 0 ? filteredLogs.map(log => { const equipment = profile.equipment.find(e => e.name === log.equipment); const hasGeoData = log.gnssErrorData && log.gnssErrorData[0]?.lat !== undefined; return (<div key={log.id} className="text-sm bg-gray-900/70 rounded-lg p-3 cursor-pointer" onClick={() => setExpandedLogId(prev => prev === log.id ? null : log.id)}>
+                        <div className="space-y-2 max-h-[350px] overflow-y-auto pr-2"><h3 className="font-semibold text-gray-300">{selectedDate ? formatDate(selectedDate, 'date') : '최근'} 피드백 <span className="text-cyan-400">({filteredLogs.length}건)</span></h3>{filteredLogs.length > 0 ? filteredLogs.map(log => (
+                        <div key={log.id} className="text-sm bg-gray-900/70 rounded-lg p-3 cursor-pointer" onClick={() => setExpandedLogId(prev => prev === log.id ? null : log.id)}>
                             <div className="flex justify-between items-start"><div><p className="font-semibold text-gray-300">{log.equipment}</p><p className="text-xs text-gray-400">{formatDate(log.startTime)}</p></div><div className="flex items-center"><span className={`font-bold mr-2 ${getSuccessScoreInfo(log.successScore).color}`}>{log.successScore}점({getSuccessScoreInfo(log.successScore).label})</span><button onClick={(e) => { e.stopPropagation(); deleteLog(log.id); }} className="ml-1 text-red-400 hover:text-red-300 p-1"><Trash2 size={16} /></button></div></div>
-                            {expandedLogId === log.id && (<> {log.gnssErrorData && <FeedbackChart data={log.gnssErrorData} equipment={equipment} />} {hasGeoData && (<div className="relative"><FeedbackMap data={log.gnssErrorData} equipment={equipment} isAnimating={animatingLogId === log.id} animationProgress={animationProgress} /><button onClick={(e) => handlePlayAnimation(log.id, e)} className="absolute top-2 right-2 z-[1000] bg-sky-500 text-white p-2 rounded-full hover:bg-sky-400 shadow-lg transition-transform hover:scale-110"><PlayCircle size={20} className={animatingLogId === log.id ? 'animate-pulse' : ''} /></button></div>)} </>)}
-                        </div>);}) : <p className="text-gray-500 text-sm mt-4">{selectedDate ? '선택된 날짜에 기록된 피드백이 없습니다.' : '피드백 기록이 없습니다.'}</p>}</div>
+                            {expandedLogId === log.id && (
+                                <ExpandedLogView 
+                                    log={log} 
+                                    profile={profile} 
+                                    animatingLogId={animatingLogId} 
+                                    animationProgress={animationProgress}
+                                    handlePlayAnimation={handlePlayAnimation}
+                                />
+                            )}
+                        </div>
+                        )) : <p className="text-gray-500 text-sm mt-4">{selectedDate ? '선택된 날짜에 기록된 피드백이 없습니다.' : '피드백 기록이 없습니다.'}</p>}</div>
                     </div>
                 </div>
             </div>
