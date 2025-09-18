@@ -97,8 +97,6 @@ const CustomScatterTooltip = ({ active, payload }) => {
     }
     return null;
 };
-
-// --- View-Specific Components ---
 const PredictionAccuracyAnalysis = ({ logs, allForecastData }) => {
     const [selectedLogId, setSelectedLogId] = useState('');
     
@@ -194,117 +192,6 @@ const PredictionAccuracyAnalysis = ({ logs, allForecastData }) => {
         </div>
     );
 };
-const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold, recommendedRange }) => {
-    const dataKeys = {
-        fore_gnss: { name: '예측 GNSS', color: '#f87171', axis: 'left' },
-        real_gnss: { name: '실제 GNSS', color: '#fca5a5', axis: 'left' },
-        tec_value: { name: 'TEC', color: '#60a5fa', axis: 'right' },
-        xrsb:      { name: 'XRSB', color: '#a78bfa', axis: 'right' },
-        kp:        { name: 'Kp', color: '#facc15', axis: 'right' },
-        dst:       { name: 'Dst', color: '#4ade80', axis: 'right' },
-    };
-    const [visibleData, setVisibleData] = useState({ fore_gnss: true, real_gnss: false, tec_value: true, xrsb: false, kp: false, dst: false });
-    const [timeRange, setTimeRange] = useState({ start: null, end: null });
-
-    useEffect(() => {
-        if (allForecastData && allForecastData.length > 0) {
-            const now = new Date().getTime();
-            const defaultStart = now - 12 * 3600 * 1000;
-            const defaultEnd = now + 24 * 3600 * 1000;
-            const dataMin = allForecastData[0].timestamp;
-            const dataMax = allForecastData[allForecastData.length - 1].timestamp;
-            setTimeRange({ start: Math.max(defaultStart, dataMin), end: Math.min(defaultEnd, dataMax) });
-        }
-    }, [allForecastData]);
-
-    const dataForChart = useMemo(() => {
-        if (!allForecastData || !timeRange.start) return [];
-        const cutoffDate = new Date();
-        cutoffDate.setMinutes(cutoffDate.getMinutes() - 10);
-        cutoffDate.setMinutes(0, 0, 0);
-        const cutoffTimestamp = cutoffDate.getTime();
-        return allForecastData
-            .filter(d => d.timestamp >= timeRange.start && d.timestamp <= timeRange.end)
-            .map(d => ({
-                ...d,
-                real_gnss: d.timestamp > cutoffTimestamp ? null : d.real_gnss
-            }));
-    }, [allForecastData, timeRange]);
-
-    const nowTimestamp = new Date().getTime();
-    const isNowInRange = nowTimestamp >= (timeRange.start || 0) && nowTimestamp <= (timeRange.end || Infinity);
-    const niceTicks = useMemo(() => {
-        if (!timeRange.start) return [];
-        return generateNiceTicks(timeRange.start, timeRange.end);
-    }, [timeRange]);
-    const formatXAxis = (tick) => {
-        if (!timeRange.start) return '';
-        const duration = timeRange.end - timeRange.start;
-        return duration <= 2 * 24 * 3600 * 1000 ? formatDate(tick, 'time') : formatDate(tick, 'date');
-    };
-
-    return (
-        <div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700">
-            <h2 className="text-lg font-semibold mb-4 text-white">GNSS 오차 및 우주기상 예측</h2>
-            <div style={{width: '100%', height: 250}}>
-                {forecastStatus.isLoading ? <div className="flex items-center justify-center h-full text-gray-400">데이터 로딩 중...</div>
-                 : forecastStatus.error ? <div className="flex items-center justify-center h-full text-red-400">{forecastStatus.error}</div>
-                 : dataForChart.length < 2 ? <div className="flex items-center justify-center h-full text-gray-400">표시할 데이터가 없습니다.</div>
-                 : (<ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={dataForChart} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" />
-                        <XAxis dataKey="timestamp" stroke="#A0AEC0" type="number" domain={[timeRange.start, timeRange.end]} ticks={niceTicks} tickFormatter={formatXAxis} />
-                        <YAxis yAxisId="left" label={{ value: 'GNSS 오차(m)', angle: -90, position: 'insideLeft', fill: '#A0AEC0' }} stroke="#F56565" />
-                        <YAxis yAxisId="right" orientation="right" label={{ value: '우주기상 지수', angle: 90, position: 'insideRight', fill: '#A0AEC0' }} stroke="#A0AEC0" />
-                        <Tooltip contentStyle={{ backgroundColor: '#1A202C' }} labelFormatter={(unixTime) => formatDate(unixTime, 'full')} formatter={(value) => formatNumber(value)}/>
-                        <Legend wrapperStyle={{fontSize: "12px"}}/>
-                        {Object.entries(dataKeys).map(([key, { name, color, axis }]) => (
-                            visibleData[key] && <Line key={key} yAxisId={axis} type="monotone" dataKey={key} name={name} stroke={color} dot={false} connectNulls />
-                        ))}
-                        {visibleData['fore_gnss'] && <ReferenceLine yAxisId="left" y={activeUnitThreshold} label={{ value: "부대 임계값", fill: "#4FD1C5" }} stroke="#4FD1C5" strokeDasharray="4 4" />}
-                        {isNowInRange && <ReferenceLine yAxisId="left" x={nowTimestamp} stroke="#fbbf24" strokeWidth={2} label={{ value: '현재', position: 'insideTop', fill: '#fbbf24' }} />}
-                        {recommendedRange && <ReferenceArea yAxisId="left" x1={recommendedRange.start} x2={recommendedRange.end} stroke="#4ade80" strokeOpacity={0.6} fill="#4ade80" fillOpacity={0.2} label={{ value: "추천 시간", position: "insideTop", fill: "#4ade80" }}/>}
-                    </LineChart>
-                </ResponsiveContainer>)}
-            </div>
-            <div className="flex flex-col xl:flex-row justify-between items-center mt-4 pt-4 border-t border-gray-700 gap-4">
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-x-4 gap-y-2 w-full">
-                    {Object.entries(dataKeys).map(([key, {name}]) => (
-                        <label key={key} className="flex items-center gap-2 cursor-pointer text-sm text-gray-300">
-                            <input type="checkbox" checked={visibleData[key]} onChange={e => setVisibleData(v => ({...v, [key]: e.target.checked}))} className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-500 rounded" />
-                            {name}
-                        </label>
-                    ))}
-                </div>
-                {timeRange.start && <div className="flex items-center gap-2 w-full xl:w-auto pt-4 xl:pt-0 border-t border-gray-700 xl:border-none">
-                    <input type="datetime-local" value={toLocalISOString(new Date(timeRange.start))} onChange={e => setTimeRange(r => ({...r, start: new Date(e.target.value).getTime()}))} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-full"/>
-                    <span className="text-gray-400">-</span>
-                    <input type="datetime-local" value={toLocalISOString(new Date(timeRange.end))} onChange={e => setTimeRange(r => ({...r, end: new Date(e.target.value).getTime()}))} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-full"/>
-                </div>}
-            </div>
-        </div>
-    );
-};
-const LiveMap = ({threshold, center}) => {
-    const [showClouds, setShowClouds] = useState(true);
-    const koreaBounds = { minLat: 33.0, maxLat: 38.5, minLon: 125.0, maxLon: 130.0 };
-    // ❗ OpenWeatherMap에서 발급받은 무료 API 키를 여기에 입력하세요.
-    const OWM_API_KEY = "5e51e99c2fa4d10dbca840c7c1e1781e";
-    const [aircrafts, setAircrafts] = useState(() => Array.from({ length: 20 }).map((_, i) => ({
-        id: i,
-        p0: [ koreaBounds.minLat + Math.random() * (koreaBounds.maxLat - koreaBounds.minLat), koreaBounds.minLon + Math.random() * (koreaBounds.maxLon - koreaBounds.minLon) ],
-        p1: [ koreaBounds.minLat + Math.random() * (koreaBounds.maxLat - koreaBounds.minLat), koreaBounds.minLon + Math.random() * (koreaBounds.maxLon - koreaBounds.minLon) ],
-        p2: [ koreaBounds.minLat + Math.random() * (koreaBounds.maxLat - koreaBounds.minLat), koreaBounds.minLon + Math.random() * (koreaBounds.maxLon - koreaBounds.minLon) ],
-        progress: Math.random(),
-        speed: 0.003 + Math.random() * 0.005,
-        error: 5 + Math.random() * 5
-    })));
-
-    useEffect(() => { const timer = setInterval(() => setAircrafts(prev => prev.map(ac => ({ ...ac, progress: (ac.progress + ac.speed) % 1, error: Math.max(3.0, ac.error + (Math.random() - 0.5) * 2) }))), 2000); return () => clearInterval(timer); }, []);
-
-    return (<div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700 h-96 flex flex-col"><h2 className="text-lg font-semibold mb-4 text-white">실시간 항적 및 기상</h2><div className="flex-grow relative"><MapContainer key={center.lat + "-" + center.lon} center={[center.lat, center.lon]} zoom={9} style={{ height: "100%", width: "100%", borderRadius: "0.75rem", backgroundColor: "#333" }}> <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; CARTO' /> {showClouds && OWM_API_KEY !== "YOUR_API_KEY_HERE" && <TileLayer url={`https://tile.openweathermap.org/map/precipitation_new/{z}/{x}/{y}.png?appid=${OWM_API_KEY}`} attribution='&copy; OpenWeatherMap' zIndex={2} opacity={0.7}/>} {aircrafts.map(ac => { let pos = getPointOnBezierCurve(ac.progress, ac.p0, ac.p1, ac.p2); return (<CircleMarker key={ac.id} center={pos} radius={6} pathOptions={{ color: getErrorColor(ac.error, threshold), fillColor: getErrorColor(ac.error, threshold), fillOpacity: 0.8 }}><LeafletTooltip>✈️ ID: {ac.id}<br />GNSS 오차: {formatNumber(ac.error)}m</LeafletTooltip></CircleMarker>); })} </MapContainer></div><div className="pt-2 mt-2 border-t border-gray-700"><label className="flex items-center gap-2 cursor-pointer text-sm text-gray-300"><input type="checkbox" checked={showClouds} onChange={e => setShowClouds(e.target.checked)} className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-500 rounded" />기상 오버레이 표시</label></div> </div>);
-};
-
 const FeedbackMap = ({ data, equipment, isAnimating, animationProgress }) => { 
     // ❗ OpenWeatherMap에서 발급받은 무료 API 키를 여기에 입력하세요.
     const OWM_API_KEY = "5e51e99c2fa4d10dbca840c7c1e1781e";
@@ -317,24 +204,63 @@ const FeedbackMap = ({ data, equipment, isAnimating, animationProgress }) => {
     const cloudOpacity = isAnimating ? 0.3 + 0.4 * Math.abs(Math.sin(animationProgress * Math.PI * 8)) : 0.7;
 
     return (
-        <div className="mt-2">
-            <div className="h-56 rounded-lg overflow-hidden relative">
-                <MapContainer center={data[0] ? [data[0].lat, data[0].lon] : [36.6, 127.4]} zoom={11} style={{ height: "100%", width: "100%" }} scrollWheelZoom={false}>
-                    <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; CARTO' />
-                    {showClouds && OWM_API_KEY !== "YOUR_API_KEY_HERE" && <TileLayer key={cloudOpacity} url={`https://tile.openweathermap.org/map/precipitation_new/{z}/{x}/{y}.png?appid=${OWM_API_KEY}`} attribution='&copy; OpenWeatherMap' zIndex={2} opacity={cloudOpacity}/>}
-                    {isAnimating ? (<Polyline positions={data.map(p => [p.lat, p.lon])} color="#6b7280" weight={3} dashArray="5, 10" />) : (data.slice(1).map((p, i) => (<Polyline key={i} positions={[[data[i].lat, data[i].lon], [p.lat, p.lon]]} color={getErrorColor(data[i].error_rate, activeThreshold)} weight={5} />)))}
-                    {animatedPosition && <CircleMarker center={animatedPosition} radius={7} pathOptions={{ color: '#fff', fillColor: getErrorColor(animatedPosition.error, activeThreshold), weight: 2, fillOpacity: 1 }} />}
-                    <AutoFitBounds bounds={bounds} />
-                </MapContainer>
-            </div>
-            <div className="pt-2 mt-2 border-t border-gray-700">
-                <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-300">
-                    <input type="checkbox" checked={showClouds} onChange={e => setShowClouds(e.target.checked)} className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-500 rounded" />
-                    기상 타임랩스 표시
-                </label>
-            </div>
+    <div className="mt-2">
+        <div className="h-56 rounded-lg overflow-hidden relative">
+            <MapContainer center={data[0] ? [data[0].lat, data[0].lon] : [36.6, 127.4]} zoom={11} style={{ height: "100%", width: "100%" }} scrollWheelZoom={false}>
+                <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; CARTO' />
+                {showClouds && OWM_API_KEY !== "5e51e99c2fa4d10dbca840c7c1e1781e" && <TileLayer className="weather-tile-layer" key={cloudOpacity} url={`https://tile.openweathermap.org/map/precipitation_new/{z}/{x}/{y}.png?appid=${OWM_API_KEY}`} attribution='&copy; OpenWeatherMap' zIndex={2} opacity={cloudOpacity}/>}
+                {isAnimating ? (<Polyline positions={data.map(p => [p.lat, p.lon])} color="#6b7280" weight={3} dashArray="5, 10" />) : (data.slice(1).map((p, i) => (<Polyline key={i} positions={[[data[i].lat, data[i].lon], [p.lat, p.lon]]} color={getErrorColor(data[i].error_rate, activeThreshold)} weight={5} />)))}
+                {animatedPosition && <CircleMarker center={animatedPosition} radius={7} pathOptions={{ color: '#fff', fillColor: getErrorColor(animatedPosition.error, activeThreshold), weight: 2, fillOpacity: 1 }} />}
+                <AutoFitBounds bounds={bounds} />
+            </MapContainer>
         </div>
+        <div className="pt-2 mt-2 border-t border-gray-700">
+            <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-300">
+                <input type="checkbox" checked={showClouds} onChange={e => setShowClouds(e.target.checked)} className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-500 rounded" />
+                기상 타임랩스 표시
+            </label>
+        </div>
+    </div>
     ); 
+};
+const FeedbackChart = ({ data, equipment }) => { const activeThreshold = equipment.thresholdMode === 'auto' && equipment.autoThreshold ? equipment.autoThreshold : equipment.manualThreshold; const segments = useMemo(() => { const segs = []; let cur = null; data.forEach(d => { if (d.error_rate > activeThreshold) { if (!cur) cur = { x1: d.date, x2: d.date }; else cur.x2 = d.date; } else { if (cur) { segs.push(cur); cur = null; } } }); if (cur) segs.push(cur); return segs; }, [data, activeThreshold]); return (<div className="mt-4 h-40"><ResponsiveContainer width="100%" height="100%"><LineChart data={data} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}> <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" /><XAxis dataKey="date" stroke="#A0AEC0" tick={{ fontSize: 10 }} tickFormatter={(tick) => formatDate(tick, 'time')} /> <YAxis stroke="#A0AEC0" tick={{ fontSize: 10 }} domain={[0, 'dataMax + 2']} tickFormatter={(tick) => formatNumber(tick, 1)} /> <Tooltip contentStyle={{ backgroundColor: '#1A202C' }} labelFormatter={(label) => formatDate(label)} formatter={(value) => formatNumber(value)} /> <Line type="monotone" dataKey="error_rate" name="GNSS 오차(m)" stroke="#F56565" strokeWidth={2} dot={false} /> {segments.map((seg, i) => <ReferenceArea key={i} x1={seg.x1} x2={seg.x2} stroke="none" fill="#f56565" fillOpacity={0.3} />)} <ReferenceLine y={activeThreshold} label={{ value: "임계값", position: 'insideTopLeft', fill: '#4FD1C5', fontSize: 10 }} stroke="#4FD1C5" strokeDasharray="3 3" /> </LineChart></ResponsiveContainer></div>); };
+const ExpandedLogView = ({ log, profile, animatingLogId, animationProgress, handlePlayAnimation }) => {
+    const [showClouds, setShowClouds] = useState(true);
+    const equipment = profile.equipment.find(e => e.name === log.equipment);
+    const hasGeoData = log.gnssErrorData && log.gnssErrorData[0]?.lat !== undefined;
+
+    return (
+        <>
+            {log.gnssErrorData && <FeedbackChart data={log.gnssErrorData} equipment={equipment} />}
+            {hasGeoData && (
+                <>
+                    <div className="relative mt-2">
+                        <FeedbackMap
+                            data={log.gnssErrorData}
+                            equipment={equipment}
+                            isAnimating={animatingLogId === log.id}
+                            animationProgress={animationProgress}
+                            showClouds={showClouds}
+                        />
+                        <button onClick={(e) => handlePlayAnimation(log.id, e)} className="absolute top-2 right-2 z-[1000] bg-sky-500 text-white p-2 rounded-full hover:bg-sky-400 shadow-lg transition-transform hover:scale-110">
+                            <PlayCircle size={20} className={animatingLogId === log.id ? 'animate-pulse' : ''} />
+                        </button>
+                    </div>
+                    <div className="pt-2 mt-2">
+                        <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-300">
+                            <input
+                                type="checkbox"
+                                checked={showClouds}
+                                onChange={e => setShowClouds(e.target.checked)}
+                                className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-500 rounded"
+                            />
+                            기상 타임랩스 표시
+                        </label>
+                    </div>
+                </>
+            )}
+        </>
+    );
 };
 const XAIAnalysisReport = ({ allForecastData, threshold }) => {
     const analysis = useMemo(() => {
@@ -346,7 +272,7 @@ const XAIAnalysisReport = ({ allForecastData, threshold }) => {
 
         const maxErrorPoint = relevantData.reduce((max, p) => p.fore_gnss > max.fore_gnss ? p : max, { fore_gnss: 0 });
         const maxError = maxErrorPoint.fore_gnss;
-        
+
         const factors = [];
         if (maxErrorPoint.kp >= 6) factors.push({ severity: "높음", name: "Kp 지수", value: formatNumber(maxErrorPoint.kp, 1), cause: "지자기 폭풍", icon: <Wind size={16} className="text-yellow-400"/> });
         if (maxErrorPoint.xrsb > 1e-5) factors.push({ severity: "높음", name: "X선 플럭스", value: maxErrorPoint.xrsb.toExponential(1), cause: "태양 플레어", icon: <Sun size={16} className="text-red-400"/> });
@@ -372,7 +298,7 @@ const XAIAnalysisReport = ({ allForecastData, threshold }) => {
         } else if (maxError > threshold * 0.5) {
             conclusion += ` 복합적인 우주기상 요인의 영향으로 보입니다.`
         }
-        
+
         return { conclusion, recommendation, factors };
     }, [allForecastData, threshold]);
 
@@ -530,9 +456,6 @@ const TodoList = ({ todoList, addTodo, updateTodo, deleteTodo }) => {
       </div>
     );
 };
-const FeedbackChart = ({ data, equipment }) => { const activeThreshold = equipment.thresholdMode === 'auto' && equipment.autoThreshold ? equipment.autoThreshold : equipment.manualThreshold; const segments = useMemo(() => { const segs = []; let cur = null; data.forEach(d => { if (d.error_rate > activeThreshold) { if (!cur) cur = { x1: d.date, x2: d.date }; else cur.x2 = d.date; } else { if (cur) { segs.push(cur); cur = null; } } }); if (cur) segs.push(cur); return segs; }, [data, activeThreshold]); return (<div className="mt-4 h-40"><ResponsiveContainer width="100%" height="100%"><LineChart data={data} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}> <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" /><XAxis dataKey="date" stroke="#A0AEC0" tick={{ fontSize: 10 }} tickFormatter={(tick) => formatDate(tick, 'time')} /> <YAxis stroke="#A0AEC0" tick={{ fontSize: 10 }} domain={[0, 'dataMax + 2']} tickFormatter={(tick) => tick.toFixed(1)} /> <Tooltip contentStyle={{ backgroundColor: '#1A202C' }} labelFormatter={(label) => formatDate(label)} /> <Line type="monotone" dataKey="error_rate" name="GNSS 오차(m)" stroke="#F56565" strokeWidth={2} dot={false} /> {segments.map((seg, i) => <ReferenceArea key={i} x1={seg.x1} x2={seg.x2} stroke="none" fill="#f56565" fillOpacity={0.3} />)} <ReferenceLine y={activeThreshold} label={{ value: "임계값", position: 'insideTopLeft', fill: '#4FD1C5', fontSize: 10 }} stroke="#4FD1C5" strokeDasharray="3 3" /> </LineChart></ResponsiveContainer></div>); };
-
-
 const OptimalTimeRecommender = ({ allForecastData, onRecommendation }) => {
     const [searchStart, setSearchStart] = useState(() => toLocalISOString(new Date()));
     const [searchEnd, setSearchEnd] = useState(() => toLocalISOString(new Date(new Date().getTime() + 48 * 3600 * 1000)));
@@ -680,6 +603,8 @@ const FutureMissionPlanner = ({ allForecastData, profile }) => {
         </div>
     );
 };
+
+// --- Main View Components ---
 const SettingsView = ({ profiles, setProfiles, activeProfile, setActiveProfileId, goBack, createDefaultProfile }) => {
     const [localProfile, setLocalProfile] = useState(JSON.parse(JSON.stringify(activeProfile)));
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -753,6 +678,13 @@ const SettingsView = ({ profiles, setProfiles, activeProfile, setActiveProfileId
             <div><h3 className="text-lg font-semibold text-white mb-3">주요 장비 설정</h3><div className="space-y-4">{localProfile.equipment.map(eq => (<div key={eq.id} className="bg-gray-700/50 p-4 rounded-lg space-y-4"><div className="flex justify-between items-center"><input type="text" value={eq.name} onChange={e => handleEquipmentChange(eq.id, 'name', e.target.value)} className="bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white" placeholder="장비명" /><button onClick={() => removeEquipment(eq.id)} className="text-red-400 hover:text-red-300 p-2"><Trash2 className="w-5 h-5" /></button></div><div className="flex items-center justify-between"><label className="flex items-center space-x-2 cursor-pointer"><input type="checkbox" checked={eq.usesGeoData} onChange={e => handleEquipmentChange(eq.id, 'usesGeoData', e.target.checked)} className="h-4 w-4 rounded bg-gray-900 border-gray-600 text-cyan-500 focus:ring-cyan-500" /><span>위치 정보 사용</span></label><div className="flex items-center space-x-2 cursor-pointer"><span className={`px-2 py-1 text-xs rounded-md ${eq.thresholdMode === 'manual' ? 'bg-blue-600':'bg-gray-600'}`} onClick={() => handleEquipmentChange(eq.id, 'thresholdMode', 'manual')}>수동</span><span className={`px-2 py-1 text-xs rounded-md ${eq.thresholdMode === 'auto' ? 'bg-blue-600':'bg-gray-600'}`} onClick={() => handleEquipmentChange(eq.id, 'thresholdMode', 'auto')}>자동</span></div></div><div>{eq.thresholdMode === 'manual' ? (<div className="flex items-center space-x-2"><input type="range" min="1" max="30" step="0.5" value={eq.manualThreshold} onChange={e => handleEquipmentChange(eq.id, 'manualThreshold', parseFloat(e.target.value))} className="w-full" /><span className="text-cyan-400 font-mono w-16 text-center">{formatNumber(eq.manualThreshold, 1)}m</span></div>) : (<div className="text-center bg-gray-800 p-2 rounded-md"><span className="text-gray-400">자동 임계값: </span><span className="font-bold text-white">{formatNumber(eq.autoThreshold) ? `${formatNumber(eq.autoThreshold)}m` : '데이터 부족'}</span></div>)}</div></div>))}</div><div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4 mt-4"><button onClick={addEquipment} className="w-full bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><Plus className="w-5 h-5" /><span>장비 추가</span></button><button className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><BrainCircuit size={20}/><span>자동 임계값 전체 재계산</span></button></div></div>
         </div><div className="mt-8 flex justify-end"><button onClick={handleSave} className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-6 rounded-lg flex items-center space-x-2"><Save className="w-5 h-5" /><span>저장</span></button></div></div>);
 };
+const FeedbackView = ({ equipmentList, onSubmit, goBack }) => {
+    const [log, setLog] = useState({ startTime: toLocalISOString(new Date(new Date().getTime() - 3600*1000)), endTime: toLocalISOString(new Date()), equipment: equipmentList.length > 0 ? equipmentList[0].name : '', successScore: 10, gnssErrorData: null });
+    const [fileName, setFileName] = useState("");
+    const handleFileChange = (e) => { const file = e.target.files[0]; if (!file) return; setFileName(file.name); const reader = new FileReader(); reader.onload = (event) => { try { const text = event.target.result; const lines = text.split(/\r\n|\n/).filter(l => l.trim() !== ''); if (lines.length < 2) throw new Error("CSV에 데이터가 없습니다."); const header = lines[0].trim().split(',').map(h => h.trim()); const hasGeo = header.includes('lat') && header.includes('lon'); if (header[0] !== 'date' || header[1] !== 'error_rate') throw new Error("헤더는 'date,error_rate'로 시작해야 합니다."); const data = lines.slice(1).map((line, i) => { const vals = line.split(','); const err = parseFloat(vals[1]); if (isNaN(err)) throw new Error(`${i+2}번째 줄 error_rate가 숫자가 아닙니다.`); const entry = { date: vals[0].trim(), error_rate: err }; if (hasGeo) { entry.lat = parseFloat(vals[2]); entry.lon = parseFloat(vals[3]); if (isNaN(entry.lat) || isNaN(entry.lon)) throw new Error(`${i+2}번째 줄 lat/lon이 숫자가 아닙니다.`); } return entry; }); setLog(prev => ({ ...prev, gnssErrorData: data })); } catch (error) { alert(`CSV 파싱 오류: ${error.message}`); setFileName(""); e.target.value = null; } }; reader.readAsText(file); };
+    const handleSubmit = (e) => { e.preventDefault(); if (!log.equipment || !log.startTime || !log.endTime) { alert("필수 항목을 모두 입력해주세요."); return; } onSubmit(log); };
+    return (<div className="bg-gray-800 p-6 md:p-8 rounded-xl border border-gray-700 max-w-2xl mx-auto"><div className="flex items-center mb-6"><button onClick={goBack} className="mr-4 p-2 rounded-full hover:bg-gray-700"><ArrowLeft className="w-6 h-6" /></button><h2 className="text-xl md:text-2xl font-bold text-white">작전 피드백 입력</h2></div><form onSubmit={handleSubmit} className="space-y-6"><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-gray-400 mb-2">작전 시작 시간</label><input type="datetime-local" value={log.startTime} onChange={e => setLog({ ...log, startTime: e.target.value })} className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white" /></div><div><label className="block text-sm font-medium text-gray-400 mb-2">작전 종료 시간</label><input type="datetime-local" value={log.endTime} onChange={e => setLog({ ...log, endTime: e.target.value })} className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white" /></div></div><div><label className="block text-sm font-medium text-gray-400 mb-2">운용 장비</label><select value={log.equipment} onChange={e => setLog({ ...log, equipment: e.target.value })} className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white"><option value="" disabled>장비를 선택하세요</option>{equipmentList.map(eq => <option key={eq.id} value={eq.name}>{eq.name}</option>)}</select></div><div><label className="block text-sm font-medium text-gray-400 mb-2">GNSS 기반 작전 성공도</label><div className="flex items-center gap-4 bg-gray-900 p-3 rounded-lg"><input type="range" min="1" max="10" value={log.successScore} onChange={e => setLog({ ...log, successScore: parseInt(e.target.value)})} className="w-full h-2 bg-gray-700 rounded-lg" /><span className={`font-bold text-lg w-32 shrink-0 text-center ${getSuccessScoreInfo(log.successScore).color}`}>{log.successScore}점 ({getSuccessScoreInfo(log.successScore).label})</span></div></div><div><label className="block text-sm font-medium text-gray-400 mb-2">GNSS 오차 데이터 (선택)</label><label htmlFor="csv-upload" className="w-full bg-gray-700 hover:bg-gray-600 text-cyan-400 font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2 cursor-pointer"><UploadCloud className="w-5 h-5" /><span>{fileName || "CSV (date,error_rate[,lat,lon])"}</span></label><input id="csv-upload" type="file" accept=".csv" onChange={handleFileChange} className="hidden" /></div><div className="pt-4 flex justify-end"><button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg flex items-center space-x-2"><BotMessageSquare className="w-5 h-5" /><span>피드백 제출</span></button></div></form></div>);
+};
 const DeveloperTestView = ({ setLogs, setForecastData, allForecastData, goBack }) => {
     const generateMockLogs = () => { if (!window.confirm("기존 피드백을 삭제하고, 최근 100일간의 시연용 테스트 데이터를 대량 생성합니까?")) return; const newLogs = []; const today = new Date(); for (let i = 0; i < 100; i++) { const date = new Date(today); date.setDate(today.getDate() - i); const logCount = Math.floor(Math.random() * 5) + 5; for (let j = 0; j < logCount; j++) { const eq = { name: "JDAM", manualThreshold: 10, usesGeoData: true }; let successScore; let baseError; const outcomeRoll = Math.random(); if (outcomeRoll < 0.85) { successScore = Math.floor(8 + Math.random() * 3); baseError = 2 + Math.random() * (eq.manualThreshold * 0.5); } else if (outcomeRoll < 0.95) { successScore = Math.floor(4 + Math.random() * 4); baseError = eq.manualThreshold * 0.7 + Math.random() * (eq.manualThreshold * 0.3); } else { successScore = Math.floor(1 + Math.random() * 3); baseError = eq.manualThreshold * 1.1 + Math.random() * 5; } const startTime = new Date(date); startTime.setHours(Math.floor(Math.random() * 23), Math.floor(Math.random() * 60)); const endTime = new Date(startTime.getTime() + (30 + Math.floor(Math.random() * 90)) * 60000); const data = []; let curTime = new Date(startTime); const p0 = [36.7+Math.random()*0.5, 127.4+Math.random()*0.5]; const p1 = [36.7+Math.random()*0.5, 127.4+Math.random()*0.5]; const p2 = [36.7+Math.random()*0.5, 127.4+Math.random()*0.5]; let step = 0; while (curTime < endTime) { const err = Math.max(1.0, baseError + (Math.random() - 0.5) * 4); const entry = { date: curTime.toISOString(), error_rate: parseFloat(formatNumber(err))}; if (eq.usesGeoData) { const progress = step / ((endTime.getTime() - startTime.getTime()) / 60000 || 1); const pos = getPointOnBezierCurve(progress, p0, p1, p2); entry.lat = pos[0]; entry.lon = pos[1]; } data.push(entry); curTime.setMinutes(curTime.getMinutes() + 1); step++; } newLogs.push({ id: Date.now() + i * 100 + j, startTime: startTime.toISOString(), endTime: endTime.toISOString(), equipment: eq.name, successScore, gnssErrorData: data }); } } setLogs(newLogs.sort((a, b) => new Date(b.startTime) - new Date(a.startTime))); alert(`${newLogs.length}개의 테스트 피드백이 생성되었습니다.`); };
     const clearLogs = () => { if (window.confirm("모든 피드백 데이터를 삭제하시겠습니까?")) { setLogs([]); alert("모든 피드백이 삭제되었습니다."); }};
@@ -812,13 +744,6 @@ const DeveloperTestView = ({ setLogs, setForecastData, allForecastData, goBack }
             </div>
         </div>
     </div>);
-};
-const FeedbackView = ({ equipmentList, onSubmit, goBack }) => {
-    const [log, setLog] = useState({ startTime: toLocalISOString(new Date(new Date().getTime() - 3600*1000)), endTime: toLocalISOString(new Date()), equipment: equipmentList.length > 0 ? equipmentList[0].name : '', successScore: 10, gnssErrorData: null });
-    const [fileName, setFileName] = useState("");
-    const handleFileChange = (e) => { const file = e.target.files[0]; if (!file) return; setFileName(file.name); const reader = new FileReader(); reader.onload = (event) => { try { const text = event.target.result; const lines = text.split(/\r\n|\n/).filter(l => l.trim() !== ''); if (lines.length < 2) throw new Error("CSV에 데이터가 없습니다."); const header = lines[0].trim().split(',').map(h => h.trim()); const hasGeo = header.includes('lat') && header.includes('lon'); if (header[0] !== 'date' || header[1] !== 'error_rate') throw new Error("헤더는 'date,error_rate'로 시작해야 합니다."); const data = lines.slice(1).map((line, i) => { const vals = line.split(','); const err = parseFloat(vals[1]); if (isNaN(err)) throw new Error(`${i+2}번째 줄 error_rate가 숫자가 아닙니다.`); const entry = { date: vals[0].trim(), error_rate: err }; if (hasGeo) { entry.lat = parseFloat(vals[2]); entry.lon = parseFloat(vals[3]); if (isNaN(entry.lat) || isNaN(entry.lon)) throw new Error(`${i+2}번째 줄 lat/lon이 숫자가 아닙니다.`); } return entry; }); setLog(prev => ({ ...prev, gnssErrorData: data })); } catch (error) { alert(`CSV 파싱 오류: ${error.message}`); setFileName(""); e.target.value = null; } }; reader.readAsText(file); };
-    const handleSubmit = (e) => { e.preventDefault(); if (!log.equipment || !log.startTime || !log.endTime) { alert("필수 항목을 모두 입력해주세요."); return; } onSubmit(log); };
-    return (<div className="bg-gray-800 p-6 md:p-8 rounded-xl border border-gray-700 max-w-2xl mx-auto"><div className="flex items-center mb-6"><button onClick={goBack} className="mr-4 p-2 rounded-full hover:bg-gray-700"><ArrowLeft className="w-6 h-6" /></button><h2 className="text-xl md:text-2xl font-bold text-white">작전 피드백 입력</h2></div><form onSubmit={handleSubmit} className="space-y-6"><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-gray-400 mb-2">작전 시작 시간</label><input type="datetime-local" value={log.startTime} onChange={e => setLog({ ...log, startTime: e.target.value })} className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white" /></div><div><label className="block text-sm font-medium text-gray-400 mb-2">작전 종료 시간</label><input type="datetime-local" value={log.endTime} onChange={e => setLog({ ...log, endTime: e.target.value })} className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white" /></div></div><div><label className="block text-sm font-medium text-gray-400 mb-2">운용 장비</label><select value={log.equipment} onChange={e => setLog({ ...log, equipment: e.target.value })} className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white"><option value="" disabled>장비를 선택하세요</option>{equipmentList.map(eq => <option key={eq.id} value={eq.name}>{eq.name}</option>)}</select></div><div><label className="block text-sm font-medium text-gray-400 mb-2">GNSS 기반 작전 성공도</label><div className="flex items-center gap-4 bg-gray-900 p-3 rounded-lg"><input type="range" min="1" max="10" value={log.successScore} onChange={e => setLog({ ...log, successScore: parseInt(e.target.value)})} className="w-full h-2 bg-gray-700 rounded-lg" /><span className={`font-bold text-lg w-32 shrink-0 text-center ${getSuccessScoreInfo(log.successScore).color}`}>{log.successScore}점 ({getSuccessScoreInfo(log.successScore).label})</span></div></div><div><label className="block text-sm font-medium text-gray-400 mb-2">GNSS 오차 데이터 (선택)</label><label htmlFor="csv-upload" className="w-full bg-gray-700 hover:bg-gray-600 text-cyan-400 font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2 cursor-pointer"><UploadCloud className="w-5 h-5" /><span>{fileName || "CSV (date,error_rate[,lat,lon])"}</span></label><input id="csv-upload" type="file" accept=".csv" onChange={handleFileChange} className="hidden" /></div><div className="pt-4 flex justify-end"><button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg flex items-center space-x-2"><BotMessageSquare className="w-5 h-5" /><span>피드백 제출</span></button></div></form></div>);
 };
 const AnalysisView = ({ logs, profile, activeUnitThreshold, allForecastData }) => {
     const [selectedEquipment, setSelectedEquipment] = useState('전체');
@@ -1076,7 +1001,6 @@ const DashboardView = ({ profile, allForecastData, forecastStatus, logs, deleteL
         </div>
     </>);
 };
-
 // --- Main View Components ---
 const Header = ({ profile, setActiveView, activeView }) => {
     const [currentTime, setCurrentTime] = useState(new Date());
@@ -1084,9 +1008,9 @@ const Header = ({ profile, setActiveView, activeView }) => {
     // ❗ OpenWeatherMap에서 발급받은 무료 API 키를 여기에 입력하세요.
     const OWM_API_KEY = "5e51e99c2fa4d10dbca840c7c1e1781e";
 
-    useEffect(() => { 
-        const timer = setInterval(() => setCurrentTime(new Date()), 1000); 
-        return () => clearInterval(timer); 
+    useEffect(() => {
+        const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+        return () => clearInterval(timer);
     }, []);
 
     useEffect(() => {
@@ -1147,9 +1071,120 @@ const Header = ({ profile, setActiveView, activeView }) => {
         </header>
     );
 };
-// --- Dashboard Sub-components ---
+const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold, recommendedRange }) => {
+    const dataKeys = {
+        fore_gnss: { name: '예측 GNSS', color: '#f87171', axis: 'left' },
+        real_gnss: { name: '실제 GNSS', color: '#fca5a5', axis: 'left' },
+        tec_value: { name: 'TEC', color: '#60a5fa', axis: 'right' },
+        xrsb:      { name: 'XRSB', color: '#a78bfa', axis: 'right' },
+        kp:        { name: 'Kp', color: '#facc15', axis: 'right' },
+        dst:       { name: 'Dst', color: '#4ade80', axis: 'right' },
+    };
+    const [visibleData, setVisibleData] = useState({ fore_gnss: true, real_gnss: false, tec_value: true, xrsb: false, kp: false, dst: false });
+    const [timeRange, setTimeRange] = useState({ start: null, end: null });
 
+    useEffect(() => {
+        if (allForecastData && allForecastData.length > 0) {
+            const now = new Date().getTime();
+            const defaultStart = now - 12 * 3600 * 1000;
+            const defaultEnd = now + 24 * 3600 * 1000;
+            const dataMin = allForecastData[0].timestamp;
+            const dataMax = allForecastData[allForecastData.length - 1].timestamp;
+            setTimeRange({ start: Math.max(defaultStart, dataMin), end: Math.min(defaultEnd, dataMax) });
+        }
+    }, [allForecastData]);
 
+    const dataForChart = useMemo(() => {
+        if (!allForecastData || !timeRange.start) return [];
+        const cutoffDate = new Date();
+        cutoffDate.setMinutes(cutoffDate.getMinutes() - 10);
+        cutoffDate.setMinutes(0, 0, 0);
+        const cutoffTimestamp = cutoffDate.getTime();
+        return allForecastData
+            .filter(d => d.timestamp >= timeRange.start && d.timestamp <= timeRange.end)
+            .map(d => ({
+                ...d,
+                real_gnss: d.timestamp > cutoffTimestamp ? null : d.real_gnss
+            }));
+    }, [allForecastData, timeRange]);
+
+    const nowTimestamp = new Date().getTime();
+    const isNowInRange = nowTimestamp >= (timeRange.start || 0) && nowTimestamp <= (timeRange.end || Infinity);
+    const niceTicks = useMemo(() => {
+        if (!timeRange.start) return [];
+        return generateNiceTicks(timeRange.start, timeRange.end);
+    }, [timeRange]);
+    const formatXAxis = (tick) => {
+        if (!timeRange.start) return '';
+        const duration = timeRange.end - timeRange.start;
+        return duration <= 2 * 24 * 3600 * 1000 ? formatDate(tick, 'time') : formatDate(tick, 'date');
+    };
+
+    return (
+        <div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700">
+            <h2 className="text-lg font-semibold mb-4 text-white">GNSS 오차 및 우주기상 예측</h2>
+            <div style={{width: '100%', height: 250}}>
+                {forecastStatus.isLoading ? <div className="flex items-center justify-center h-full text-gray-400">데이터 로딩 중...</div>
+                 : forecastStatus.error ? <div className="flex items-center justify-center h-full text-red-400">{forecastStatus.error}</div>
+                 : dataForChart.length < 2 ? <div className="flex items-center justify-center h-full text-gray-400">표시할 데이터가 없습니다.</div>
+                 : (<ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={dataForChart} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" />
+                        <XAxis dataKey="timestamp" stroke="#A0AEC0" type="number" domain={[timeRange.start, timeRange.end]} ticks={niceTicks} tickFormatter={formatXAxis} />
+                        <YAxis yAxisId="left" label={{ value: 'GNSS 오차(m)', angle: -90, position: 'insideLeft', fill: '#A0AEC0' }} stroke="#F56565" />
+                        <YAxis yAxisId="right" orientation="right" label={{ value: '우주기상 지수', angle: 90, position: 'insideRight', fill: '#A0AEC0' }} stroke="#A0AEC0" />
+                        <Tooltip contentStyle={{ backgroundColor: '#1A202C' }} labelFormatter={(unixTime) => formatDate(unixTime, 'full')} formatter={(value) => formatNumber(value)}/>
+                        <Legend wrapperStyle={{fontSize: "12px"}}/>
+                        {Object.entries(dataKeys).map(([key, { name, color, axis }]) => (
+                            visibleData[key] && <Line key={key} yAxisId={axis} type="monotone" dataKey={key} name={name} stroke={color} dot={false} connectNulls />
+                        ))}
+                        {visibleData['fore_gnss'] && <ReferenceLine yAxisId="left" y={activeUnitThreshold} label={{ value: "부대 임계값", fill: "#4FD1C5" }} stroke="#4FD1C5" strokeDasharray="4 4" />}
+                        {isNowInRange && <ReferenceLine yAxisId="left" x={nowTimestamp} stroke="#fbbf24" strokeWidth={2} label={{ value: '현재', position: 'insideTop', fill: '#fbbf24' }} />}
+                        {recommendedRange && <ReferenceArea yAxisId="left" x1={recommendedRange.start} x2={recommendedRange.end} stroke="#4ade80" strokeOpacity={0.6} fill="#4ade80" fillOpacity={0.2} label={{ value: "추천 시간", position: "insideTop", fill: "#4ade80" }}/>}
+                    </LineChart>
+                </ResponsiveContainer>)}
+            </div>
+            <div className="flex flex-col xl:flex-row justify-between items-center mt-4 pt-4 border-t border-gray-700 gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-x-4 gap-y-2 w-full">
+                    {Object.entries(dataKeys).map(([key, {name}]) => (
+                        <label key={key} className="flex items-center gap-2 cursor-pointer text-sm text-gray-300">
+                            <input type="checkbox" checked={visibleData[key]} onChange={e => setVisibleData(v => ({...v, [key]: e.target.checked}))} className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-500 rounded" />
+                            {name}
+                        </label>
+                    ))}
+                </div>
+                {timeRange.start && <div className="flex items-center gap-2 w-full xl:w-auto pt-4 xl:pt-0 border-t border-gray-700 xl:border-none">
+                    <input type="datetime-local" value={toLocalISOString(new Date(timeRange.start))} onChange={e => setTimeRange(r => ({...r, start: new Date(e.target.value).getTime()}))} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-full"/>
+                    <span className="text-gray-400">-</span>
+                    <input type="datetime-local" value={toLocalISOString(new Date(timeRange.end))} onChange={e => setTimeRange(r => ({...r, end: new Date(e.target.value).getTime()}))} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-full"/>
+                </div>}
+            </div>
+        </div>
+    );
+};
+const LiveMap = ({threshold, center}) => {
+    const [showClouds, setShowClouds] = useState(true);
+    const koreaBounds = { minLat: 33.0, maxLat: 38.5, minLon: 125.0, maxLon: 130.0 };
+    // ❗ OpenWeatherMap에서 발급받은 무료 API 키를 여기에 입력하세요.
+    const OWM_API_KEY = "5e51e99c2fa4d10dbca840c7c1e1781e";
+    const [aircrafts, setAircrafts] = useState(() => Array.from({ length: 20 }).map((_, i) => ({
+        id: i,
+        p0: [ koreaBounds.minLat + Math.random() * (koreaBounds.maxLat - koreaBounds.minLat), koreaBounds.minLon + Math.random() * (koreaBounds.maxLon - koreaBounds.minLon) ],
+        p1: [ koreaBounds.minLat + Math.random() * (koreaBounds.maxLat - koreaBounds.minLat), koreaBounds.minLon + Math.random() * (koreaBounds.maxLon - koreaBounds.minLon) ],
+        p2: [ koreaBounds.minLat + Math.random() * (koreaBounds.maxLat - koreaBounds.minLat), koreaBounds.minLon + Math.random() * (koreaBounds.maxLon - koreaBounds.minLon) ],
+        progress: Math.random(),
+        speed: 0.003 + Math.random() * 0.005,
+        error: 5 + Math.random() * 5
+    })));
+
+    useEffect(() => { const timer = setInterval(() => setAircrafts(prev => prev.map(ac => ({ ...ac, progress: (ac.progress + ac.speed) % 1, error: Math.max(3.0, ac.error + (Math.random() - 0.5) * 2) }))), 2000); return () => clearInterval(timer); }, []);
+
+    return (<div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700 h-96 flex flex-col"><h2 className="text-lg font-semibold mb-4 text-white">실시간 항적 및 기상</h2><div className="flex-grow relative"><MapContainer key={center.lat + "-" + center.lon} center={[center.lat, center.lon]} zoom={9} style={{ height: "100%", width: "100%", borderRadius: "0.75rem", backgroundColor: "#333" }}> <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; CARTO' /> {showClouds && OWM_API_KEY !== "5e51e99c2fa4d10dbca840c7c1e1781e" && <TileLayer url={`https://tile.openweathermap.org/map/precipitation_new/{z}/{x}/{y}.png?appid=${OWM_API_KEY}`} attribution='&copy; OpenWeatherMap' zIndex={2} opacity={0.7}/>} {aircrafts.map(ac => { let pos = getPointOnBezierCurve(ac.progress, ac.p0, ac.p1, ac.p2); return (<CircleMarker key={ac.id} center={pos} radius={6} pathOptions={{ color: getErrorColor(ac.error, threshold), fillColor: getErrorColor(ac.error, threshold), fillOpacity: 0.8 }}><LeafletTooltip>✈️ ID: {ac.id}<br />GNSS 오차: {formatNumber(ac.error)}m</LeafletTooltip></CircleMarker>); })} </MapContainer></div><div className="pt-2 mt-2 border-t border-gray-700"><label className="flex items-center gap-2 cursor-pointer text-sm text-gray-300"><input type="checkbox" checked={showClouds} onChange={e => setShowClouds(e.target.checked)} className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-500 rounded" />기상 오버레이 표시</label></div> </div>);
+};
+
+// ####################################################################
+// ## MAIN APP COMPONENT
+// ####################################################################
 // ####################################################################
 // ## MAIN APP COMPONENT
 // ####################################################################
@@ -1231,31 +1266,31 @@ export default function App() {
           .catch(error => { console.error("Failed to fetch forecast data:", error); setForecastStatus({ isLoading: false, error: `데이터 처리 중 오류: ${error.message}` }); });
   }, []);
 
-  useEffect(() => { 
+  useEffect(() => {
       try {
-        localStorage.setItem('allProfiles', JSON.stringify(allProfiles)); 
+        localStorage.setItem('allProfiles', JSON.stringify(allProfiles));
       } catch (e) {
         console.error("Failed to save profiles to localStorage:", e);
       }
     }, [allProfiles]);
-  useEffect(() => { 
+  useEffect(() => {
       try {
-        localStorage.setItem('activeProfileId', JSON.stringify(activeProfileId)); 
+        localStorage.setItem('activeProfileId', JSON.stringify(activeProfileId));
       } catch(e) {
         console.error("Failed to save activeProfileId to localStorage:", e);
       }
     }, [activeProfileId]);
-  useEffect(() => { 
+  useEffect(() => {
       try {
-        localStorage.setItem('missionLogs', JSON.stringify(missionLogs)); 
+        localStorage.setItem('missionLogs', JSON.stringify(missionLogs));
       } catch(e) {
         console.error("Failed to save missionLogs to localStorage:", e);
         // Optionally alert user or handle error
       }
     }, [missionLogs]);
-  useEffect(() => { 
+  useEffect(() => {
       try {
-        const todayKey = formatDateKey(new Date()); 
+        const todayKey = formatDateKey(new Date());
         localStorage.setItem('todoList', JSON.stringify({ [todayKey]: todoList }));
       } catch(e) {
         console.error("Failed to save todoList to localStorage:", e);
