@@ -192,37 +192,68 @@ const PredictionAccuracyAnalysis = ({ logs, allForecastData }) => {
         </div>
     );
 };
-const FeedbackMap = ({ data, equipment, isAnimating, animationProgress }) => { 
+const FeedbackMap = ({ data, equipment, isAnimating, animationProgress, showClouds }) => { 
     // ❗ OpenWeatherMap에서 발급받은 무료 API 키를 여기에 입력하세요.
     const OWM_API_KEY = "5e51e99c2fa4d10dbca840c7c1e1781e";
-    const [showClouds, setShowClouds] = useState(true);
     const activeThreshold = equipment.thresholdMode === 'auto' && equipment.autoThreshold ? equipment.autoThreshold : equipment.manualThreshold; 
     const bounds = useMemo(() => data.length > 0 ? L.latLngBounds(data.map(p => [p.lat, p.lon])) : null, [data]); 
     const animatedPosition = useMemo(() => { if(!isAnimating || data.length < 2) return null; const totalPoints = data.length - 1; const currentIndex = Math.min(Math.floor(animationProgress * totalPoints), totalPoints - 1); const nextIndex = Math.min(currentIndex + 1, totalPoints); const segmentProgress = (animationProgress * totalPoints) - currentIndex; const p1 = data[currentIndex]; const p2 = data[nextIndex]; return { lat: p1.lat + (p2.lat - p1.lat) * segmentProgress, lon: p1.lon + (p2.lon - p1.lon) * segmentProgress, error: p1.error_rate }; }, [isAnimating, animationProgress, data]); 
 
-    // Dynamic opacity for cloud timelapse effect
-    const cloudOpacity = isAnimating ? 0.3 + 0.4 * Math.abs(Math.sin(animationProgress * Math.PI * 8)) : 0.7;
+    const cloudOpacity = isAnimating ? 0.3 + 0.4 * Math.abs(Math.sin(animationProgress * Math.PI * 8)) : 0.6;
 
     return (
-    <div className="mt-2">
         <div className="h-56 rounded-lg overflow-hidden relative">
             <MapContainer center={data[0] ? [data[0].lat, data[0].lon] : [36.6, 127.4]} zoom={11} style={{ height: "100%", width: "100%" }} scrollWheelZoom={false}>
                 <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; CARTO' />
-                {showClouds && OWM_API_KEY !== "5e51e99c2fa4d10dbca840c7c1e1781e" && <TileLayer className="weather-tile-layer" key={cloudOpacity} url={`https://tile.openweathermap.org/map/precipitation_new/{z}/{x}/{y}.png?appid=${OWM_API_KEY}`} attribution='&copy; OpenWeatherMap' zIndex={2} opacity={cloudOpacity}/>}
+                {showClouds && OWM_API_KEY !== "5e51e99c2fa4d10dbca840c7c1e1781e" && <TileLayer className="weather-tile-layer" key={cloudOpacity} url={`https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid=${OWM_API_KEY}`} attribution='&copy; OpenWeatherMap' zIndex={2} opacity={cloudOpacity}/>}
                 {isAnimating ? (<Polyline positions={data.map(p => [p.lat, p.lon])} color="#6b7280" weight={3} dashArray="5, 10" />) : (data.slice(1).map((p, i) => (<Polyline key={i} positions={[[data[i].lat, data[i].lon], [p.lat, p.lon]]} color={getErrorColor(data[i].error_rate, activeThreshold)} weight={5} />)))}
                 {animatedPosition && <CircleMarker center={animatedPosition} radius={7} pathOptions={{ color: '#fff', fillColor: getErrorColor(animatedPosition.error, activeThreshold), weight: 2, fillOpacity: 1 }} />}
                 <AutoFitBounds bounds={bounds} />
             </MapContainer>
         </div>
-        <div className="pt-2 mt-2 border-t border-gray-700">
-            <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-300">
-                <input type="checkbox" checked={showClouds} onChange={e => setShowClouds(e.target.checked)} className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-500 rounded" />
-                기상 타임랩스 표시
-            </label>
-        </div>
-    </div>
     ); 
 };
+
+// --- 3. ExpandedLogView 컴포넌트 새로 추가 ---
+const ExpandedLogView = ({ log, profile, animatingLogId, animationProgress, handlePlayAnimation }) => {
+    const [showClouds, setShowClouds] = useState(true);
+    const equipment = profile.equipment.find(e => e.name === log.equipment);
+    const hasGeoData = log.gnssErrorData && log.gnssErrorData[0]?.lat !== undefined;
+
+    return (
+        <div className="pt-2 mt-2 border-t border-gray-700 space-y-2">
+            {log.gnssErrorData && <FeedbackChart data={log.gnssErrorData} equipment={equipment} />}
+            {hasGeoData && (
+                <>
+                    <div className="relative">
+                        <FeedbackMap
+                            data={log.gnssErrorData}
+                            equipment={equipment}
+                            isAnimating={animatingLogId === log.id}
+                            animationProgress={animationProgress}
+                            showClouds={showClouds}
+                        />
+                        <button onClick={(e) => handlePlayAnimation(log.id, e)} className="absolute top-2 right-2 z-[1000] bg-sky-500 text-white p-2 rounded-full hover:bg-sky-400 shadow-lg transition-transform hover:scale-110">
+                            <PlayCircle size={20} className={animatingLogId === log.id ? 'animate-pulse' : ''} />
+                        </button>
+                    </div>
+                    <div>
+                        <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-300">
+                            <input
+                                type="checkbox"
+                                checked={showClouds}
+                                onChange={e => setShowClouds(e.target.checked)}
+                                className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-500 rounded"
+                            />
+                            기상 타임랩스 표시
+                        </label>
+                    </div>
+                </>
+            )}
+        </>
+    );
+};
+
 const FeedbackChart = ({ data, equipment }) => { const activeThreshold = equipment.thresholdMode === 'auto' && equipment.autoThreshold ? equipment.autoThreshold : equipment.manualThreshold; const segments = useMemo(() => { const segs = []; let cur = null; data.forEach(d => { if (d.error_rate > activeThreshold) { if (!cur) cur = { x1: d.date, x2: d.date }; else cur.x2 = d.date; } else { if (cur) { segs.push(cur); cur = null; } } }); if (cur) segs.push(cur); return segs; }, [data, activeThreshold]); return (<div className="mt-4 h-40"><ResponsiveContainer width="100%" height="100%"><LineChart data={data} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}> <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" /><XAxis dataKey="date" stroke="#A0AEC0" tick={{ fontSize: 10 }} tickFormatter={(tick) => formatDate(tick, 'time')} /> <YAxis stroke="#A0AEC0" tick={{ fontSize: 10 }} domain={[0, 'dataMax + 2']} tickFormatter={(tick) => formatNumber(tick, 1)} /> <Tooltip contentStyle={{ backgroundColor: '#1A202C' }} labelFormatter={(label) => formatDate(label)} formatter={(value) => formatNumber(value)} /> <Line type="monotone" dataKey="error_rate" name="GNSS 오차(m)" stroke="#F56565" strokeWidth={2} dot={false} /> {segments.map((seg, i) => <ReferenceArea key={i} x1={seg.x1} x2={seg.x2} stroke="none" fill="#f56565" fillOpacity={0.3} />)} <ReferenceLine y={activeThreshold} label={{ value: "임계값", position: 'insideTopLeft', fill: '#4FD1C5', fontSize: 10 }} stroke="#4FD1C5" strokeDasharray="3 3" /> </LineChart></ResponsiveContainer></div>); };
 const ExpandedLogView = ({ log, profile, animatingLogId, animationProgress, handlePlayAnimation }) => {
     const [showClouds, setShowClouds] = useState(true);
@@ -456,7 +487,7 @@ const TodoList = ({ todoList, addTodo, updateTodo, deleteTodo }) => {
       </div>
     );
 };
-const OptimalTimeRecommender = ({ allForecastData, onRecommendation }) => {
+const OptimalTimeRecommender = ({ allForecastData, onRecommendation, activeUnitThreshold }) => {
     const [searchStart, setSearchStart] = useState(() => toLocalISOString(new Date()));
     const [searchEnd, setSearchEnd] = useState(() => toLocalISOString(new Date(new Date().getTime() + 48 * 3600 * 1000)));
     const [duration, setDuration] = useState(3);
@@ -500,7 +531,7 @@ const OptimalTimeRecommender = ({ allForecastData, onRecommendation }) => {
             const maxError = Math.max(...bestWindow.map(d => d.fore_gnss));
             const avgKp = bestWindow.reduce((s, d) => s + d.kp, 0) / duration;
             const overallAvgError = relevantData.reduce((s,d) => s + d.fore_gnss, 0) / relevantData.length;
-            const improvement = ((overallAvgError - avgError) / overallAvgError) * 100;
+            const improvement = overallAvgError > 0 ? ((overallAvgError - avgError) / overallAvgError) * 100 : 0;
 
             setResult({ 
                 time: `추천 작전 시간: ${formatDate(bestStartTime, 'full')} ~ ${formatDate(recommendedEnd, 'time')}`,
@@ -543,7 +574,7 @@ const OptimalTimeRecommender = ({ allForecastData, onRecommendation }) => {
                     <p className="text-center text-cyan-400 font-semibold">{result.time}</p>
                     <div className="bg-gray-900/50 p-3 rounded-md text-sm">
                         <p className="text-gray-300 mb-2">
-                           해당 시간대는 탐색 기간 전체 평균 오차 대비 **약 {formatNumber(result.analysis.improvement, 0)}% 낮은** GNSS 오차가 예측되어 작전 수행에 가장 안정적인 환경을 제공합니다.
+                           {parseStyledText(`해당 시간대는 탐색 기간 전체 평균 오차 대비 **약 ${formatNumber(result.analysis.improvement, 0)}% 낮은** GNSS 오차가 예측되어 작전 수행에 가장 안정적인 환경을 제공합니다.`)}
                         </p>
                         <ul className="text-gray-400 space-y-1 text-xs">
                             <li className="flex justify-between"><span>평균 예측 오차:</span> <strong>{formatNumber(result.analysis.avgError)}m</strong></li>
@@ -982,6 +1013,7 @@ const AnalysisView = ({ logs, profile, activeUnitThreshold, allForecastData }) =
         </div>
     );
 };
+// --- 4. DashboardView 컴포넌트 교체 ---
 const DashboardView = ({ profile, allForecastData, forecastStatus, logs, deleteLog, todoList, addTodo, updateTodo, deleteTodo, activeUnitThreshold }) => {
     const [selectedDate, setSelectedDate] = useState(null);
     const [expandedLogId, setExpandedLogId] = useState(null);
@@ -1014,12 +1046,12 @@ const DashboardView = ({ profile, allForecastData, forecastStatus, logs, deleteL
             .rdp-day_today:not(.rdp-day_selected) { border: 1px solid #0ea5e9; color: #0ea5e9 !important; } 
             .rdp { color: #d1d5db; --rdp-cell-size: 48px; } 
             .rdp-nav_button { color: #0ea5e9 !important; }
-            .weather-tile-layer { filter: saturate(200%) brightness(80%) hue-rotate(-15deg); }
+            .weather-tile-layer { filter: brightness(0.9) saturate(1.5) hue-rotate(220deg) contrast(1.2); }
         `}</style>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-6">
                 <ForecastGraph allForecastData={allForecastData} forecastStatus={forecastStatus} activeUnitThreshold={activeUnitThreshold} recommendedRange={recommendedRange} />
-                <OptimalTimeRecommender allForecastData={allForecastData} onRecommendation={setRecommendedRange} />
+                <OptimalTimeRecommender allForecastData={allForecastData} onRecommendation={setRecommendedRange} activeUnitThreshold={activeUnitThreshold}/>
                 <FutureMissionPlanner allForecastData={allForecastData} profile={profile} />
                 <div className="lg:col-span-2 bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700">
                     <div className="flex justify-between items-center mb-4"><h2 className="text-lg font-semibold text-white flex items-center"><CalendarIcon size={20} className="inline-block mr-2" />작전 캘린더 & 피드백 로그</h2>{selectedDate && <button onClick={() => setSelectedDate(null)} className="text-sm bg-cyan-600 hover:bg-cyan-700 px-3 py-1 rounded-md">전체 로그 보기</button>}</div>
@@ -1232,7 +1264,7 @@ const LiveMap = ({threshold, center}) => {
 
     useEffect(() => { const timer = setInterval(() => setAircrafts(prev => prev.map(ac => ({ ...ac, progress: (ac.progress + ac.speed) % 1, error: Math.max(3.0, ac.error + (Math.random() - 0.5) * 2) }))), 2000); return () => clearInterval(timer); }, []);
 
-    return (<div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700 h-96 flex flex-col"><h2 className="text-lg font-semibold mb-4 text-white">실시간 항적 및 기상</h2><div className="flex-grow relative"><MapContainer key={center.lat + "-" + center.lon} center={[center.lat, center.lon]} zoom={9} style={{ height: "100%", width: "100%", borderRadius: "0.75rem", backgroundColor: "#333" }}> <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; CARTO' /> {showClouds && OWM_API_KEY !== "5e51e99c2fa4d10dbca840c7c1e1781e" && <TileLayer url={`https://tile.openweathermap.org/map/precipitation_new/{z}/{x}/{y}.png?appid=${OWM_API_KEY}`} attribution='&copy; OpenWeatherMap' zIndex={2} opacity={0.7}/>} {aircrafts.map(ac => { let pos = getPointOnBezierCurve(ac.progress, ac.p0, ac.p1, ac.p2); return (<CircleMarker key={ac.id} center={pos} radius={6} pathOptions={{ color: getErrorColor(ac.error, threshold), fillColor: getErrorColor(ac.error, threshold), fillOpacity: 0.8 }}><LeafletTooltip>✈️ ID: {ac.id}<br />GNSS 오차: {formatNumber(ac.error)}m</LeafletTooltip></CircleMarker>); })} </MapContainer></div><div className="pt-2 mt-2 border-t border-gray-700"><label className="flex items-center gap-2 cursor-pointer text-sm text-gray-300"><input type="checkbox" checked={showClouds} onChange={e => setShowClouds(e.target.checked)} className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-500 rounded" />기상 오버레이 표시</label></div> </div>);
+    return (<div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700 h-96 flex flex-col"><h2 className="text-lg font-semibold mb-4 text-white">실시간 항적 및 기상</h2><div className="flex-grow relative"><MapContainer key={center.lat + "-" + center.lon} center={[center.lat, center.lon]} zoom={9} style={{ height: "100%", width: "100%", borderRadius: "0.75rem", backgroundColor: "#333" }}> <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; CARTO' /> {showClouds && OWM_API_KEY !== "5e51e99c2fa4d10dbca840c7c1e1781e" && <TileLayer className="weather-tile-layer" url={`https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid=${OWM_API_KEY}`} attribution='&copy; OpenWeatherMap' zIndex={2} opacity={0.6}/>} {aircrafts.map(ac => { let pos = getPointOnBezierCurve(ac.progress, ac.p0, ac.p1, ac.p2); return (<CircleMarker key={ac.id} center={pos} radius={6} pathOptions={{ color: getErrorColor(ac.error, threshold), fillColor: getErrorColor(ac.error, threshold), fillOpacity: 0.8 }}><LeafletTooltip>✈️ ID: {ac.id}<br />GNSS 오차: {formatNumber(ac.error)}m</LeafletTooltip></CircleMarker>); })} </MapContainer></div><div className="pt-2 mt-2 border-t border-gray-700"><label className="flex items-center gap-2 cursor-pointer text-sm text-gray-300"><input type="checkbox" checked={showClouds} onChange={e => setShowClouds(e.target.checked)} className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-500 rounded" />기상 오버레이 표시</label></div> </div>);
 };
 
 // ####################################################################
