@@ -250,7 +250,7 @@ const ExpandedLogView = ({ log, profile, animatingLogId, animationProgress, hand
                     </div>
                 </>
             )}
-        </>
+        </div>
     );
 };
 
