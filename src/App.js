@@ -135,7 +135,14 @@ export default function App() {
                   }, {});
               });
 
-              const formattedData = parsedData.filter(d => !isNaN(d.timestamp)).sort((a, b) => a.timestamp - b.timestamp);
+              // KP INDEX SCALING CORRECTION
+              const correctedData = parsedData.map(d => ({
+                  ...d,
+                  kp: d.kp10 / 10,
+              }));
+              correctedData.forEach(d => delete d.kp10); // remove old key
+
+              const formattedData = correctedData.filter(d => !isNaN(d.timestamp)).sort((a, b) => a.timestamp - b.timestamp);
               setAllForecastData(formattedData);
               setForecastStatus({ isLoading: false, error: null });
           })
@@ -164,7 +171,7 @@ export default function App() {
     switch (activeView) {
       case 'settings': return <SettingsView profiles={allProfiles} setProfiles={setAllProfiles} activeProfile={activeProfile} setActiveProfileId={setActiveProfileId} goBack={() => setActiveView('dashboard')} createDefaultProfile={createDefaultProfile} />;
       case 'feedback': return <FeedbackView equipmentList={activeProfile.equipment} onSubmit={handleFeedbackSubmit} goBack={() => setActiveView('dashboard')} />;
-      case 'dev': return <DeveloperTestView setLogs={setMissionLogs} setForecastData={setAllForecastData} allForecastData={allForecastData} goBack={() => setActiveView('dashboard')} />;
+      case 'dev': return <DeveloperTestView setLogs={setLogs} setForecastData={setAllForecastData} allForecastData={allForecastData} goBack={() => setActiveView('dashboard')} />;
       case 'analysis': return <AnalysisView logs={missionLogs} profile={activeProfile} activeUnitThreshold={activeUnitThreshold} allForecastData={allForecastData} />;
       default: return <DashboardView profile={activeProfile} allForecastData={allForecastData} forecastStatus={forecastStatus} logs={missionLogs} deleteLog={deleteLog} todoList={todoList} addTodo={addTodo} updateTodo={updateTodo} deleteTodo={deleteTodo} activeUnitThreshold={activeUnitThreshold} />;
     }
@@ -259,10 +266,10 @@ const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold, r
         real_gnss: { name: '실제 GNSS', color: '#fca5a5', axis: 'left' },
         tec_value: { name: 'TEC', color: '#60a5fa', axis: 'right' },
         xrsb:      { name: 'XRSB', color: '#a78bfa', axis: 'right' },
-        kp10:      { name: 'Kp', color: '#facc15', axis: 'right' },
+        kp:        { name: 'Kp', color: '#facc15', axis: 'right' },
         dst:       { name: 'Dst', color: '#4ade80', axis: 'right' },
     };
-    const [visibleData, setVisibleData] = useState({ fore_gnss: true, real_gnss: false, tec_value: true, xrsb: false, kp10: false, dst: false });
+    const [visibleData, setVisibleData] = useState({ fore_gnss: true, real_gnss: false, tec_value: true, xrsb: false, kp: false, dst: false });
     const [timeRange, setTimeRange] = useState({ start: null, end: null });
 
     useEffect(() => {
@@ -412,7 +419,7 @@ const XAIAnalysisReport = ({ allForecastData, threshold }) => {
         const maxError = maxErrorPoint.fore_gnss;
         
         const factors = [];
-        if (maxErrorPoint.kp10 >= 5) factors.push({ severity: "높음", name: "Kp 지수", value: formatNumber(maxErrorPoint.kp10, 1), cause: "지자기 폭풍", icon: <Wind size={16} className="text-yellow-400"/> });
+        if (maxErrorPoint.kp >= 6) factors.push({ severity: "높음", name: "Kp 지수", value: formatNumber(maxErrorPoint.kp, 1), cause: "지자기 폭풍", icon: <Wind size={16} className="text-yellow-400"/> });
         if (maxErrorPoint.xrsb > 1e-5) factors.push({ severity: "높음", name: "X선 플럭스", value: maxErrorPoint.xrsb.toExponential(1), cause: "태양 플레어", icon: <Sun size={16} className="text-red-400"/> });
         if (maxErrorPoint.tec_value > 50) factors.push({ severity: "높음", name: "총 전자 함유량(TEC)", value: formatNumber(maxErrorPoint.tec_value, 1), cause: "전리층 불안정", icon: <Zap size={16} className="text-blue-400"/>});
 
@@ -630,7 +637,7 @@ const OptimalTimeRecommender = ({ allForecastData, onRecommendation }) => {
             
             const avgError = minSum / duration;
             const maxError = Math.max(...bestWindow.map(d => d.fore_gnss));
-            const avgKp = bestWindow.reduce((s,d)=>s+d.kp10,0) / duration;
+            const avgKp = bestWindow.reduce((s,d)=>s+d.kp,0) / duration;
             const avgXrsb = bestWindow.reduce((s,d)=>s+d.xrsb,0) / duration;
 
             const xaiText = `이 시간대는 평균 GNSS 오차가 **${formatNumber(avgError)}m**로 가장 낮고, 최대 예측 오차도 **${formatNumber(maxError)}m** 수준입니다. Kp 지수(${formatNumber(avgKp,1)})와 태양 X선 플럭스(${avgXrsb.toExponential(1)})가 안정적으로 유지될 것으로 예측되어 추천됩니다.`;
@@ -1251,7 +1258,7 @@ const DeveloperTestView = ({ setLogs, setForecastData, allForecastData, goBack }
             } else if (type === 'storm') {
                  for(let i = 0; i < newData.length; i++) {
                     if (newData[i].timestamp > targetTime && newData[i].timestamp < targetTime + 12 * 3600 * 1000) {
-                        newData[i].kp10 = 7 + Math.random();
+                        newData[i].kp = 6 + Math.random() * 2; // Kp 6-8
                          newData[i].fore_gnss = Math.max(newData[i].fore_gnss, 18 + Math.random() * 8);
                     }
                 }
