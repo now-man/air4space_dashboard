@@ -1027,67 +1027,7 @@ const SettingsView = ({ profiles, setProfiles, activeProfile, setActiveProfileId
         </div><div className="mt-8 flex justify-end"><button onClick={handleSave} className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-6 rounded-lg flex items-center space-x-2"><Save className="w-5 h-5" /><span>저장</span></button></div></div>);
 };
 
-const DeveloperTestView = ({ setLogs, setForecastData, allForecastData, goBack, setIsRaining }) => {
-    const generateMockLogs = () => { if (!window.confirm("기존 피드백을 삭제하고, 최근 100일간의 시연용 테스트 데이터를 대량 생성합니까?")) return; const newLogs = []; const today = new Date(); for (let i = 0; i < 100; i++) { const date = new Date(today); date.setDate(today.getDate() - i); const logCount = Math.floor(Math.random() * 5) + 5; for (let j = 0; j < logCount; j++) { const eq = { name: "JDAM", manualThreshold: 10, usesGeoData: true }; let successScore; let baseError; const outcomeRoll = Math.random(); if (outcomeRoll < 0.85) { successScore = Math.floor(8 + Math.random() * 3); baseError = 2 + Math.random() * (eq.manualThreshold * 0.5); } else if (outcomeRoll < 0.95) { successScore = Math.floor(4 + Math.random() * 4); baseError = eq.manualThreshold * 0.7 + Math.random() * (eq.manualThreshold * 0.3); } else { successScore = Math.floor(1 + Math.random() * 3); baseError = eq.manualThreshold * 1.1 + Math.random() * 5; } const startTime = new Date(date); startTime.setHours(Math.floor(Math.random() * 23), Math.floor(Math.random() * 60)); const endTime = new Date(startTime.getTime() + (30 + Math.floor(Math.random() * 90)) * 60000); const data = []; let curTime = new Date(startTime); const p0 = [36.7+Math.random()*0.5, 127.4+Math.random()*0.5]; const p1 = [36.7+Math.random()*0.5, 127.4+Math.random()*0.5]; const p2 = [36.7+Math.random()*0.5, 127.4+Math.random()*0.5]; let step = 0; while (curTime < endTime) { const err = Math.max(1.0, baseError + (Math.random() - 0.5) * 4); const entry = { date: curTime.toISOString(), error_rate: parseFloat(formatNumber(err))}; if (eq.usesGeoData) { const progress = step / ((endTime.getTime() - startTime.getTime()) / 60000 || 1); const pos = getPointOnBezierCurve(progress, p0, p1, p2); entry.lat = pos[0]; entry.lon = pos[1]; } data.push(entry); curTime.setMinutes(curTime.getMinutes() + 1); step++; } newLogs.push({ id: Date.now() + i * 100 + j, startTime: startTime.toISOString(), endTime: endTime.toISOString(), equipment: eq.name, successScore, gnssErrorData: data }); } } setLogs(newLogs.sort((a, b) => new Date(b.startTime) - new Date(a.startTime))); alert(`${newLogs.length}개의 테스트 피드백이 생성되었습니다.`); };
-    const clearLogs = () => { if (window.confirm("모든 피드백 데이터를 삭제하시겠습니까?")) { setLogs([]); alert("모든 피드백이 삭제되었습니다."); }};
-    const resetAppState = () => { if (window.confirm("앱의 모든 로컬 데이터(프로필, 피드백 로그)를 삭제하고 초기 상태로 되돌리시겠습니까?")) { localStorage.clear(); alert("앱 상태가 초기화되었습니다. 페이지를 새로고침합니다."); window.location.reload(); }};
 
-    const simulateSpaceWeather = (type) => {
-        setForecastData(prevData => {
-            const newData = JSON.parse(JSON.stringify(allForecastData)); // Use original data for clean slate
-            const now = new Date().getTime();
-            const targetTime = now + (3 + Math.random() * 5) * 3600 * 1000; // 3-8 hours from now
-
-            let alertMsg = '';
-            if(type === 'flare') {
-                for(let i = 0; i < newData.length; i++) {
-                    if (newData[i].timestamp > targetTime && newData[i].timestamp < targetTime + 2 * 3600 * 1000) {
-                        newData[i].xrsb = 5e-5;
-                        newData[i].fore_gnss = Math.max(newData[i].fore_gnss, 15 + Math.random() * 5);
-                    }
-                }
-                alertMsg = '강력한 태양 플레어 상황이 시뮬레이션 되었습니다.';
-            } else if (type === 'storm') {
-                 for(let i = 0; i < newData.length; i++) {
-                    if (newData[i].timestamp > targetTime && newData[i].timestamp < targetTime + 12 * 3600 * 1000) {
-                        newData[i].kp = 6 + Math.random() * 2; // Kp 6-8
-                         newData[i].fore_gnss = Math.max(newData[i].fore_gnss, 18 + Math.random() * 8);
-                    }
-                }
-                alertMsg = '강력한 지자기 폭풍 상황이 시뮬레이션 되었습니다.';
-            }
-            alert(alertMsg);
-            return newData;
-        });
-    };
-
-    return (<div className="bg-gray-800 p-6 md:p-8 rounded-xl border border-gray-700 max-w-2xl mx-auto">
-        <div className="flex items-center mb-6"><button onClick={goBack} className="mr-4 p-2 rounded-full hover:bg-gray-700"><ArrowLeft className="w-6 h-6" /></button><h2 className="text-xl md:text-2xl font-bold text-white">개발자 테스트 도구</h2></div>
-        <div className="space-y-6">
-            <div>
-                <h3 className="text-lg font-semibold text-white mb-3">발표 시연용 시나리오</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                     <button onClick={() => simulateSpaceWeather('flare')} className="w-full bg-orange-600 hover:bg-orange-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><Sun size={20} /><span>태양 플레어</span></button>
-                     <button onClick={() => simulateSpaceWeather('storm')} className="w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><Wind size={20} /><span>지자기 폭풍</span></button>
-                     <button onClick={() => setIsRaining(prev => !prev)} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><Cloud size={20} /><span>강수 상황</span></button>
-                </div>
-            </div>
-            <div>
-                <h3 className="text-lg font-semibold text-white mb-3">피드백 데이터 관리</h3>
-                <div className="flex space-x-4">
-                    <button onClick={generateMockLogs} className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><TestTube2 size={20} /><span>테스트 데이터 생성</span></button>
-                    <button onClick={clearLogs} className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><Eraser size={20} /><span>모든 데이터 삭제</span></button>
-                </div>
-            </div>
-            <div>
-                <h3 className="text-lg font-semibold text-white mb-3 text-red-400">위험 영역</h3>
-                <div className="flex space-x-4">
-                    <button onClick={resetAppState} className="w-full bg-red-800 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><RefreshCw size={20} /><span>앱 상태 전체 초기화</span></button>
-                </div>
-            </div>
-        </div>
-    </div>);
-};
 
 
 const AnalysisView = ({ logs, profile, activeUnitThreshold, allForecastData }) => {
