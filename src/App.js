@@ -1,21 +1,21 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceArea, BarChart, Bar, ScatterChart, Scatter, ZAxis, Cell, Label } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceArea, BarChart, Bar, ScatterChart, Scatter, Cell, Label } from 'recharts';
 import { DayPicker } from 'react-day-picker';
 import { ko } from 'date-fns/locale';
-import { Zap, Settings, ShieldAlert, BotMessageSquare, Plus, Trash2, Save, ArrowLeft, UploadCloud, TestTube2, BrainCircuit, Eraser, Lightbulb, RefreshCw, PlayCircle, MapPin, Edit3, Compass, Activity, Calendar as CalendarIcon, MoreVertical, X, Edit, Home, BarChart3, Target, PlusCircle, Pencil, Square, Circle, Triangle, Star, Diamond, Hexagon, Aperture, Search, ChevronDown, Sun, Wind } from 'lucide-react';
+import { Zap, Settings, ShieldAlert, BotMessageSquare, Plus, Trash2, Save, ArrowLeft, UploadCloud, TestTube2, BrainCircuit, Eraser, Lightbulb, RefreshCw, PlayCircle, MapPin, Edit3, Compass, Activity, Calendar as CalendarIcon, MoreVertical, X, Edit, Home, BarChart3, Target, PlusCircle, Pencil, Square, Circle, Triangle, Star, Diamond, Hexagon, Aperture, Search, ChevronDown, Sun, Wind, Cloud, Thermometer } from 'lucide-react';
 import { MapContainer, TileLayer, CircleMarker, Tooltip as LeafletTooltip, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'react-day-picker/dist/style.css';
 
 // --- Helper Functions ---
+const formatNumber = (num, places = 2) => num !== null && num !== undefined ? num.toFixed(places) : 'N/A';
 const getErrorColor = (error, threshold = 10.0) => { if (error > threshold) return '#f87171'; if (error > threshold * 0.7) return '#facc15'; return '#4ade80'; };
 const getSuccessScoreInfo = (score) => { if (score >= 8) return { label: "성공", color: "text-green-400", dotClass: "bg-green-500" }; if (score >= 4 && score < 8) return { label: "보통", color: "text-yellow-400", dotClass: "bg-yellow-500" }; return { label: "실패", color: "text-red-400", dotClass: "bg-red-500" }; };
-const formatDate = (dateString, format = 'full') => { if (!dateString) return 'N/A'; const date = new Date(dateString); const options = { full: { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }, time: { hour: '2-digit', minute: '2-digit', hour12: false }, date: { month: '2-digit', day: '2-digit' }}; return new Intl.DateTimeFormat('ko-KR', options[format]).format(date); };
+const formatDate = (dateString, format = 'full') => { if (!dateString) return 'N/A'; const date = new Date(dateString); const options = { full: { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }, time: { hour: '2-digit', minute: '2-digit', hour12: false }, date: { year: 'numeric', month: '2-digit', day: '2-digit' }}; return new Intl.DateTimeFormat('ko-KR', options[format]).format(date); };
 const toLocalISOString = (date) => new Date(date.getTime() - (date.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
 const getPointOnBezierCurve = (t, p0, p1, p2) => { const [x0, y0] = p0; const [x1, y1] = p1; const [x2, y2] = p2; const u = 1 - t; const tt = t * t; const uu = u * u; const x = uu * x0 + 2 * u * t * x1 + tt * x2; const y = uu * y0 + 2 * u * t * y1 + tt * y2; return [x, y]; };
 const formatDateKey = (d) => { if(!d) return null; d = new Date(d); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
-const formatNumber = (num, places = 2) => num !== null && num !== undefined ? num.toFixed(places) : 'N/A';
 const parseStyledText = (text) => {
     const keywordStyles = { "위험": "text-red-400 font-bold", "주의": "text-yellow-400 font-bold", "안정": "text-green-400 font-bold" };
     const parts = text.split(/(\*\*.*?\*\*|\b위험\b|\b주의\b|\b안정\b)/g);
@@ -63,7 +63,6 @@ const DEFAULT_PROFILES_DATA = [
     { name: "제18전투비행단", lat: 37.761001, lon: 128.956414 }, { name: "제20전투비행단", lat: 36.698670, lon: 126.503526 },
     { name: "제38전투비행전대", lat: 35.926051, lon: 126.615725 }
 ];
-
 
 // ####################################################################
 // ## ALL COMPONENT DEFINITIONS (DECLARED BEFORE `App`)
@@ -1021,10 +1020,10 @@ const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold, r
         real_gnss: { name: '실제 GNSS', color: '#fca5a5', axis: 'left' },
         tec_value: { name: 'TEC', color: '#60a5fa', axis: 'right' },
         xrsb:      { name: 'XRSB', color: '#a78bfa', axis: 'right' },
-        kp:      { name: 'Kp', color: '#facc15', axis: 'right' },
+        kp10:      { name: 'Kp', color: '#facc15', axis: 'right' },
         dst:       { name: 'Dst', color: '#4ade80', axis: 'right' },
     };
-    const [visibleData, setVisibleData] = useState({ fore_gnss: true, real_gnss: false, tec_value: true, xrsb: false, kp: false, dst: false });
+    const [visibleData, setVisibleData] = useState({ fore_gnss: true, real_gnss: false, tec_value: true, xrsb: false, kp10: false, dst: false });
     const [timeRange, setTimeRange] = useState({ start: null, end: null });
 
     useEffect(() => {
@@ -1186,6 +1185,7 @@ export default function App() {
           .then(csvText => {
               const lines = csvText.trim().split('\n');
               if (lines.length < 2) throw new Error('CSV data is empty or has no content.');
+
               const headers = lines[0].trim().split(',').map(h => h.trim());
               const parsedData = lines.slice(1).map(line => {
                   const values = line.split(',');
@@ -1199,8 +1199,14 @@ export default function App() {
                       return obj;
                   }, {});
               });
-              const correctedData = parsedData.map(d => ({ ...d, kp: d.kp10 / 10 }));
-              correctedData.forEach(d => delete d.kp10);
+
+              // KP INDEX SCALING CORRECTION
+              const correctedData = parsedData.map(d => ({
+                  ...d,
+                  kp: d.kp10 / 10,
+              }));
+              correctedData.forEach(d => delete d.kp10); // remove old key
+
               const formattedData = correctedData.filter(d => !isNaN(d.timestamp)).sort((a, b) => a.timestamp - b.timestamp);
               setAllForecastData(formattedData);
               setForecastStatus({ isLoading: false, error: null });
@@ -1208,36 +1214,10 @@ export default function App() {
           .catch(error => { console.error("Failed to fetch forecast data:", error); setForecastStatus({ isLoading: false, error: `데이터 처리 중 오류: ${error.message}` }); });
   }, []);
 
-  useEffect(() => {
-      try {
-        localStorage.setItem('allProfiles', JSON.stringify(allProfiles));
-      } catch (e) {
-        console.error("Failed to save profiles to localStorage:", e);
-      }
-    }, [allProfiles]);
-  useEffect(() => {
-      try {
-        localStorage.setItem('activeProfileId', JSON.stringify(activeProfileId));
-      } catch(e) {
-        console.error("Failed to save activeProfileId to localStorage:", e);
-      }
-    }, [activeProfileId]);
-  useEffect(() => {
-      try {
-        localStorage.setItem('missionLogs', JSON.stringify(missionLogs));
-      } catch(e) {
-        console.error("Failed to save missionLogs to localStorage:", e);
-        // Optionally alert user or handle error
-      }
-    }, [missionLogs]);
-  useEffect(() => {
-      try {
-        const todayKey = formatDateKey(new Date());
-        localStorage.setItem('todoList', JSON.stringify({ [todayKey]: todoList }));
-      } catch(e) {
-        console.error("Failed to save todoList to localStorage:", e);
-      }
-    }, [todoList]);
+  useEffect(() => { localStorage.setItem('allProfiles', JSON.stringify(allProfiles)); }, [allProfiles]);
+  useEffect(() => { localStorage.setItem('activeProfileId', JSON.stringify(activeProfileId)); }, [activeProfileId]);
+  useEffect(() => { localStorage.setItem('missionLogs', JSON.stringify(missionLogs)); }, [missionLogs]);
+  useEffect(() => { const todayKey = formatDateKey(new Date()); localStorage.setItem('todoList', JSON.stringify({ [todayKey]: todoList })); }, [todoList]);
 
   const handleFeedbackSubmit = (log) => { const newLogs = [...missionLogs, { ...log, id: Date.now() }]; setMissionLogs(newLogs.sort((a,b) => new Date(b.startTime) - new Date(a.startTime))); setActiveView('dashboard'); };
   const deleteLog = (logId) => { if (window.confirm("피드백 기록을 삭제하시겠습니까?")) { setMissionLogs(missionLogs.filter(log => log.id !== logId)); }};
