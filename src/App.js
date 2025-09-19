@@ -18,8 +18,7 @@ const formatDate = (dateString, format = 'full') => {
     const date = new Date(dateString);
 
     if (format === 'time') {
-        // 'time' 포맷은 시간만 가져와서 뒤에 ':00'을 붙이는 방식으로 특별 처리
-        const hour = new Intl.DateTimeFormat('ko-KR', { hour: '2-digit', hour12: false }).format(date);
+        const hour = String(date.getHours()).padStart(2, '0');
         return `${hour}:00`;
     }
 
@@ -163,11 +162,11 @@ const WeatherForecastPopover = ({ profile, apiKey, onClose, position }) => {
             {loading ? <p className="text-gray-300">로딩 중...</p> : !forecast ? <p className="text-red-400">예보를 불러올 수 없습니다.</p> :
             <div className="space-y-2 max-h-80 overflow-y-auto">
                 {forecast.map(hour => (
-                    <div key={hour.dt} className="grid grid-cols-4 items-center text-center p-2 bg-gray-900/50 rounded-md text-gray-200">
+                    <div key={hour.dt} className="grid grid-cols-4 items-center text-center p-2 bg-gray-900/50 rounded-md text-white">
                         <span className="font-semibold">{formatDate(hour.dt * 1000, 'time')}</span>
-                        <div className="flex items-center justify-center gap-2">
+                        <div className="flex items-center justify-center gap-1">
                             <img src={`https://openweathermap.org/img/wn/${hour.weather[0].icon}.png`} alt={hour.weather[0].description} className="w-8 h-8"/>
-                            <span>{hour.weather[0].description}</span>
+                            <span className="w-16 text-xs">{hour.weather[0].description}</span>
                         </div>
                         <span className="flex items-center justify-center gap-1"><Thermometer size={16} className="text-red-400"/> {formatNumber(hour.main.temp, 1)}°C</span>
                         <span className="flex items-center justify-center gap-1"><Droplets size={16} className="text-blue-400"/> {Math.round(hour.pop * 100)}%</span>
@@ -305,7 +304,10 @@ const FeedbackMap = ({ data, equipment, isAnimating, animationProgress, showClou
             <MapContainer center={data[0] ? [data[0].lat, data[0].lon] : [36.6, 127.4]} zoom={11} style={{ height: "100%", width: "100%" }} scrollWheelZoom={false}>
                 <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; CARTO' />
                 {(showClouds || isRaining) && OWM_API_KEY !== "5e51e99c2fa4d10dbca840c7c1e1781e" && (
-                    <TileLayer className="weather-tile-layer" key={cloudOpacity} url={`https://tile.openweathermap.org/map/precipitation_new/{z}/{x}/{y}.png?appid=${OWM_API_KEY}`} attribution='&copy; OpenWeatherMap' zIndex={3} opacity={isRaining ? 0.9 : cloudOpacity}/>
+                    <>
+                        <TileLayer url={`https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid=${OWM_API_KEY}`} attribution='&copy; OpenWeatherMap' zIndex={2} opacity={0.5}/>
+                        <TileLayer className="weather-tile-layer" key={cloudOpacity} url={`https://tile.openweathermap.org/map/precipitation_new/{z}/{x}/{y}.png?appid=${OWM_API_KEY}`} attribution='&copy; OpenWeatherMap' zIndex={3} opacity={isRaining ? 0.9 : cloudOpacity}/>
+                    </>
                 )}
                 {isAnimating ? (<Polyline positions={data.map(p => [p.lat, p.lon])} color="#6b7280" weight={3} dashArray="5, 10" />) : (data.slice(1).map((p, i) => (<Polyline key={i} positions={[[data[i].lat, data[i].lon], [p.lat, p.lon]]} color={getErrorColor(data[i].error_rate, activeThreshold)} weight={5} />)))}
                 {animatedPosition && <CircleMarker center={animatedPosition} radius={7} pathOptions={{ color: '#fff', fillColor: getErrorColor(animatedPosition.error, activeThreshold), weight: 2, fillOpacity: 1 }} />}
@@ -426,427 +428,6 @@ const XAIAnalysisReport = ({ allForecastData, threshold }) => {
         </div>
     );
 };
-
-const SettingsView = ({ profiles, setProfiles, activeProfile, setActiveProfileId, goBack, createDefaultProfile }) => {
-    const [localProfile, setLocalProfile] = useState(JSON.parse(JSON.stringify(activeProfile)));
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [editingProfile, setEditingProfile] = useState(null);
-
-    useEffect(() => { setLocalProfile(JSON.parse(JSON.stringify(activeProfile))); }, [activeProfile]);
-
-    const handleProfileChange = (field, value) => { setLocalProfile(prev => ({ ...prev, [field]: value })); };
-    const handleLocationChange = (field, value) => setLocalProfile(p => ({ ...p, location: { ...p.location, coords: { ...p.location.coords, [field]: parseFloat(value) || null }}}));
-    const handleEquipmentChange = (id, field, value) => setLocalProfile({ ...localProfile, equipment: localProfile.equipment.map(eq => eq.id === id ? { ...eq, [field]: value } : eq) });
-    const addEquipment = () => setLocalProfile({ ...localProfile, equipment: [...localProfile.equipment, { id: Date.now(), name: "신규 장비", thresholdMode: 'manual', manualThreshold: 10.0, autoThreshold: null, usesGeoData: false }] });
-    const removeEquipment = (id) => setLocalProfile({ ...localProfile, equipment: localProfile.equipment.filter(eq => eq.id !== id) });
-
-    const handleSave = () => {
-        setProfiles(profiles.map(p => p.id === localProfile.id ? localProfile : p));
-        goBack();
-    };
-
-    const handleLocationMethodChange = (method) => {
-        let updatedProfile = { ...localProfile, location: { ...localProfile.location, method } };
-        if (method === 'unit') {
-            updatedProfile.location.coords = localProfile.location.initialCoords;
-            setLocalProfile(updatedProfile);
-        } else if (method === 'current') {
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                    (position) => {
-                        const { latitude, longitude } = position.coords;
-                        updatedProfile.location.coords = { lat: latitude, lon: longitude };
-                        setLocalProfile(updatedProfile);
-                        alert('현재 위치를 성공적으로 가져왔습니다. 하단의 저장 버튼을 눌러야 지도에 반영됩니다.');
-                    },
-                    (error) => alert(`위치 정보를 가져오는데 실패했습니다: ${error.message}`)
-                );
-            } else { alert('이 브라우저에서는 위치 정보가 지원되지 않습니다.'); }
-        } else {
-            setLocalProfile(updatedProfile);
-        }
-    };
-
-    const openProfileModal = (profile) => { setEditingProfile(profile ? {...profile} : { name: '', location: { coords: { lat: '', lon: ''}}}); setIsModalOpen(true); };
-    const handleSaveProfile = () => {
-        if (!editingProfile.name) { alert("부대명을 입력해주세요."); return; }
-        if (editingProfile.id) { // Edit existing
-            setProfiles(profiles.map(p => p.id === editingProfile.id ? { ...p, name: editingProfile.name, location: { ...p.location, coords: editingProfile.location.coords, initialCoords: editingProfile.location.coords } } : p));
-        } else { // Add new
-            const newProfile = createDefaultProfile(Date.now(), editingProfile.name, editingProfile.location.coords.lat, editingProfile.location.coords.lon);
-            const newProfiles = [...profiles, newProfile];
-            setProfiles(newProfiles);
-            setActiveProfileId(newProfile.id);
-        }
-        setIsModalOpen(false);
-    };
-    const handleDeleteProfile = (id) => {
-        if (profiles.length <= 1) { alert("최소 하나 이상의 프로필이 필요합니다."); return; }
-        if (window.confirm("정말로 이 프로필을 삭제하시겠습니까?")) {
-            const newProfiles = profiles.filter(p => p.id !== id);
-            setProfiles(newProfiles);
-            setActiveProfileId(newProfiles[0].id);
-        }
-    };
-
-    return (<div className="bg-gray-800 p-6 md:p-8 rounded-xl border border-gray-700 max-w-3xl mx-auto">
-        {isModalOpen && (<div className="fixed inset-0 bg-black bg-opacity-70 flex justify-center items-center z-50 p-4"><div className="bg-gray-800 border border-gray-600 rounded-xl p-6 w-full max-w-md"><h2 className="text-xl font-bold mb-4">{editingProfile.id ? '부대 정보 수정' : '새 부대 추가'}</h2><div className="space-y-4"><input type="text" placeholder="부대명" value={editingProfile.name} onChange={e => setEditingProfile({...editingProfile, name: e.target.value})} className="w-full bg-gray-900 border-gray-600 rounded p-2" /><input type="number" placeholder="위도" value={editingProfile.location.coords.lat} onChange={e => setEditingProfile({...editingProfile, location: {...editingProfile.location, coords: {...editingProfile.location.coords, lat: parseFloat(e.target.value) || ''}}})} className="w-full bg-gray-900 border-gray-600 rounded p-2" /><input type="number" placeholder="경도" value={editingProfile.location.coords.lon} onChange={e => setEditingProfile({...editingProfile, location: {...editingProfile.location, coords: {...editingProfile.location.coords, lon: parseFloat(e.target.value) || ''}}})} className="w-full bg-gray-900 border-gray-600 rounded p-2" /></div><div className="flex justify-end gap-2 mt-6"><button onClick={() => setIsModalOpen(false)} className="px-4 py-2 bg-gray-600 rounded">취소</button><button onClick={handleSaveProfile} className="px-4 py-2 bg-blue-600 rounded">저장</button></div></div></div>)}
-        <div className="flex items-center mb-6"><button onClick={goBack} className="mr-4 p-2 rounded-full hover:bg-gray-700"><ArrowLeft className="w-6 h-6" /></button><h2 className="text-xl md:text-2xl font-bold text-white">부대 프로필 설정</h2></div>
-        <div className="space-y-6">
-            <div><label className="block text-sm font-medium text-gray-400 mb-2">현재 프로필</label><div className="flex items-center gap-2"><select className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white" value={activeProfile.id} onChange={e => setActiveProfileId(Number(e.target.value))}>{profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select><button onClick={() => openProfileModal()} className="p-2 bg-green-600 rounded-lg" title="새 부대 추가"><PlusCircle size={20} /></button><button onClick={() => openProfileModal(activeProfile)} className="p-2 bg-yellow-600 rounded-lg" title="현 부대 수정"><Pencil size={20} /></button><button onClick={() => handleDeleteProfile(activeProfile.id)} className="p-2 bg-red-600 rounded-lg" title="현 부대 삭제"><Trash2 size={20} /></button></div></div>
-            <div className="bg-gray-700/50 p-4 rounded-lg space-y-3"><h3 className="text-lg font-semibold text-white">위치 및 시간 설정</h3><div className="form-group"><label className="block text-sm font-medium text-gray-400 mb-2">위치 설정 방식</label><div className="flex flex-wrap gap-2">{[{id:'unit',label:'부대 위치',icon:Compass},{id:'manual',label:'직접 입력',icon:Edit3},{id:'current',label:'현재 위치',icon:MapPin}].map(m=>(<button key={m.id} onClick={()=>handleLocationMethodChange(m.id)} className={`flex items-center space-x-2 px-3 py-2 text-sm rounded-md ${localProfile.location.method === m.id ? 'bg-blue-600 text-white':'bg-gray-600'}`}>{React.createElement(m.icon,{size:16})}<span>{m.label}</span></button>))}</div></div>{localProfile.location.method === 'manual' && (<div className="flex flex-col md:flex-row gap-4 mt-2"><div className="w-full md:w-1/2"><label className="block text-sm font-medium text-gray-400 mb-2">위도</label><input type="number" step="any" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white" value={localProfile.location.coords.lat || ''} onChange={e => handleLocationChange('lat', e.target.value)}/></div><div className="w-full md:w-1/2"><label className="block text-sm font-medium text-gray-400 mb-2">경도</label><input type="number" step="any" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white" value={localProfile.location.coords.lon || ''} onChange={e => handleLocationChange('lon', e.target.value)}/></div></div>)}
-            <div className="form-group"><label className="block text-sm font-medium text-gray-400 mb-2">표준 시간</label><div className="flex items-center space-x-2">{[{id:'KST',label:'KST'},{id:'UTC',label:'UTC'},{id:'BOTH',label:'KST/UTC'}].map(t=>(<button key={t.id} onClick={()=>handleProfileChange('timezone', t.id)} className={`px-3 py-2 text-sm rounded-md ${localProfile.timezone===t.id ? 'bg-blue-600 text-white':'bg-gray-600'}`}>{t.label}</button>))}</div></div></div>
-            <div className="bg-gray-700/50 p-4 rounded-lg"><h3 className="text-lg font-semibold text-white mb-3">부대 종합 임계값</h3><div className="flex items-center space-x-2 cursor-pointer"><span className={`px-2 py-1 text-xs rounded-md ${localProfile.unitThresholdMode === 'manual' ? 'bg-blue-600':'bg-gray-600'}`} onClick={() => handleProfileChange('unitThresholdMode', 'manual')}>수동</span><span className={`px-2 py-1 text-xs rounded-md ${localProfile.unitThresholdMode === 'auto' ? 'bg-blue-600':'bg-gray-600'}`} onClick={() => handleProfileChange('unitThresholdMode', 'auto')}>자동</span></div>{localProfile.unitThresholdMode === 'manual' ? (<div className="flex items-center space-x-2 mt-2"><input type="range" min="1" max="30" step="0.5" value={localProfile.unitManualThreshold} onChange={e => handleProfileChange('unitManualThreshold', parseFloat(e.target.value))} className="w-full" /><span className="text-cyan-400 font-mono w-16 text-center">{formatNumber(localProfile.unitManualThreshold, 1)}m</span></div>) : (<div className="text-center bg-gray-800 p-2 rounded-md mt-2"><span className="text-gray-400">자동 계산된 임계값: </span><span className="font-bold text-white">{formatNumber(localProfile.unitAutoThreshold) ? `${formatNumber(localProfile.unitAutoThreshold)}m` : 'N/A'}</span></div>)}</div>
-            <div><h3 className="text-lg font-semibold text-white mb-3">주요 장비 설정</h3><div className="space-y-4">{localProfile.equipment.map(eq => (<div key={eq.id} className="bg-gray-700/50 p-4 rounded-lg space-y-4"><div className="flex justify-between items-center"><input type="text" value={eq.name} onChange={e => handleEquipmentChange(eq.id, 'name', e.target.value)} className="bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white" placeholder="장비명" /><button onClick={() => removeEquipment(eq.id)} className="text-red-400 hover:text-red-300 p-2"><Trash2 className="w-5 h-5" /></button></div><div className="flex items-center justify-between"><label className="flex items-center space-x-2 cursor-pointer"><input type="checkbox" checked={eq.usesGeoData} onChange={e => handleEquipmentChange(eq.id, 'usesGeoData', e.target.checked)} className="h-4 w-4 rounded bg-gray-900 border-gray-600 text-cyan-500 focus:ring-cyan-500" /><span>위치 정보 사용</span></label><div className="flex items-center space-x-2 cursor-pointer"><span className={`px-2 py-1 text-xs rounded-md ${eq.thresholdMode === 'manual' ? 'bg-blue-600':'bg-gray-600'}`} onClick={() => handleEquipmentChange(eq.id, 'thresholdMode', 'manual')}>수동</span><span className={`px-2 py-1 text-xs rounded-md ${eq.thresholdMode === 'auto' ? 'bg-blue-600':'bg-gray-600'}`} onClick={() => handleEquipmentChange(eq.id, 'thresholdMode', 'auto')}>자동</span></div></div><div>{eq.thresholdMode === 'manual' ? (<div className="flex items-center space-x-2"><input type="range" min="1" max="30" step="0.5" value={eq.manualThreshold} onChange={e => handleEquipmentChange(eq.id, 'manualThreshold', parseFloat(e.target.value))} className="w-full" /><span className="text-cyan-400 font-mono w-16 text-center">{formatNumber(eq.manualThreshold, 1)}m</span></div>) : (<div className="text-center bg-gray-800 p-2 rounded-md"><span className="text-gray-400">자동 임계값: </span><span className="font-bold text-white">{formatNumber(eq.autoThreshold) ? `${formatNumber(eq.autoThreshold)}m` : '데이터 부족'}</span></div>)}</div></div>))}</div><div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4 mt-4"><button onClick={addEquipment} className="w-full bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><Plus className="w-5 h-5" /><span>장비 추가</span></button><button className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><BrainCircuit size={20}/><span>자동 임계값 전체 재계산</span></button></div></div>
-        </div><div className="mt-8 flex justify-end"><button onClick={handleSave} className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-6 rounded-lg flex items-center space-x-2"><Save className="w-5 h-5" /><span>저장</span></button></div></div>);
-};
-const FeedbackView = ({ equipmentList, onSubmit, goBack }) => {
-    const [log, setLog] = useState({ startTime: toLocalISOString(new Date(new Date().getTime() - 3600*1000)), endTime: toLocalISOString(new Date()), equipment: equipmentList.length > 0 ? equipmentList[0].name : '', successScore: 10, gnssErrorData: null });
-    const [fileName, setFileName] = useState("");
-    const handleFileChange = (e) => { const file = e.target.files[0]; if (!file) return; setFileName(file.name); const reader = new FileReader(); reader.onload = (event) => { try { const text = event.target.result; const lines = text.split(/\r\n|\n/).filter(l => l.trim() !== ''); if (lines.length < 2) throw new Error("CSV에 데이터가 없습니다."); const header = lines[0].trim().split(',').map(h => h.trim()); const hasGeo = header.includes('lat') && header.includes('lon'); if (header[0] !== 'date' || header[1] !== 'error_rate') throw new Error("헤더는 'date,error_rate'로 시작해야 합니다."); const data = lines.slice(1).map((line, i) => { const vals = line.split(','); const err = parseFloat(vals[1]); if (isNaN(err)) throw new Error(`${i+2}번째 줄 error_rate가 숫자가 아닙니다.`); const entry = { date: vals[0].trim(), error_rate: err }; if (hasGeo) { entry.lat = parseFloat(vals[2]); entry.lon = parseFloat(vals[3]); if (isNaN(entry.lat) || isNaN(entry.lon)) throw new Error(`${i+2}번째 줄 lat/lon이 숫자가 아닙니다.`); } return entry; }); setLog(prev => ({ ...prev, gnssErrorData: data })); } catch (error) { alert(`CSV 파싱 오류: ${error.message}`); setFileName(""); e.target.value = null; } }; reader.readAsText(file); };
-    const handleSubmit = (e) => { e.preventDefault(); if (!log.equipment || !log.startTime || !log.endTime) { alert("필수 항목을 모두 입력해주세요."); return; } onSubmit(log); };
-    return (<div className="bg-gray-800 p-6 md:p-8 rounded-xl border border-gray-700 max-w-2xl mx-auto"><div className="flex items-center mb-6"><button onClick={goBack} className="mr-4 p-2 rounded-full hover:bg-gray-700"><ArrowLeft className="w-6 h-6" /></button><h2 className="text-xl md:text-2xl font-bold text-white">작전 피드백 입력</h2></div><form onSubmit={handleSubmit} className="space-y-6"><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-gray-400 mb-2">작전 시작 시간</label><input type="datetime-local" value={log.startTime} onChange={e => setLog({ ...log, startTime: e.target.value })} className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white" /></div><div><label className="block text-sm font-medium text-gray-400 mb-2">작전 종료 시간</label><input type="datetime-local" value={log.endTime} onChange={e => setLog({ ...log, endTime: e.target.value })} className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white" /></div></div><div><label className="block text-sm font-medium text-gray-400 mb-2">운용 장비</label><select value={log.equipment} onChange={e => setLog({ ...log, equipment: e.target.value })} className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white"><option value="" disabled>장비를 선택하세요</option>{equipmentList.map(eq => <option key={eq.id} value={eq.name}>{eq.name}</option>)}</select></div><div><label className="block text-sm font-medium text-gray-400 mb-2">GNSS 기반 작전 성공도</label><div className="flex items-center gap-4 bg-gray-900 p-3 rounded-lg"><input type="range" min="1" max="10" value={log.successScore} onChange={e => setLog({ ...log, successScore: parseInt(e.target.value)})} className="w-full h-2 bg-gray-700 rounded-lg" /><span className={`font-bold text-lg w-32 shrink-0 text-center ${getSuccessScoreInfo(log.successScore).color}`}>{log.successScore}점 ({getSuccessScoreInfo(log.successScore).label})</span></div></div><div><label className="block text-sm font-medium text-gray-400 mb-2">GNSS 오차 데이터 (선택)</label><label htmlFor="csv-upload" className="w-full bg-gray-700 hover:bg-gray-600 text-cyan-400 font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2 cursor-pointer"><UploadCloud className="w-5 h-5" /><span>{fileName || "CSV (date,error_rate[,lat,lon])"}</span></label><input id="csv-upload" type="file" accept=".csv" onChange={handleFileChange} className="hidden" /></div><div className="pt-4 flex justify-end"><button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg flex items-center space-x-2"><BotMessageSquare className="w-5 h-5" /><span>피드백 제출</span></button></div></form></div>);
-};
-
-
-
-const AnalysisView = ({ logs, profile, activeUnitThreshold, allForecastData }) => {
-    const [selectedEquipment, setSelectedEquipment] = useState('전체');
-    const [pcaSelectedEquipment, setPcaSelectedEquipment] = useState('전체');
-
-    const shapeMap = useMemo(() => {
-        const shapes = ['circle', 'triangle', 'square', 'diamond', 'star', 'cross', 'hexagon', 'aperture'];
-        return profile.equipment.reduce((acc, eq, index) => {
-            acc[eq.name] = shapes[index % shapes.length];
-            return acc;
-        }, {});
-    }, [profile.equipment]);
-
-    const analysisData = useMemo(() => {
-        if (logs.length === 0) return null;
-
-        const totalLogs = logs.length;
-        const avgScore = logs.reduce((acc, log) => acc + log.successScore, 0) / totalLogs;
-        const highErrorLogs = logs.filter(l => l.gnssErrorData && l.gnssErrorData.some(d => d.lat) && Math.max(...l.gnssErrorData.map(d => d.error_rate)) > profile.unitManualThreshold);
-
-        const timeOfDayData = [{ label: '새벽 (00-06)', s: 0, n: 0, f: 0 }, { label: '오전 (06-12)', s: 0, n: 0, f: 0 }, { label: '오후 (12-18)', s: 0, n: 0, f: 0 }, { label: '야간 (18-24)', s: 0, n: 0, f: 0 }];
-        logs.forEach(log => {
-            const h = new Date(log.startTime).getHours();
-            const p = timeOfDayData[Math.floor(h / 6)];
-            if(log.successScore >= 8) p.s++;
-            else if(log.successScore >= 4) p.n++;
-            else p.f++;
-        });
-
-        const weeklyTrends = {};
-        logs.forEach(log => { const d = new Date(log.startTime); const weekStart = new Date(d.setDate(d.getDate() - (d.getDay() || 7) + 1)).toISOString().slice(0, 10); if (!weeklyTrends[weekStart]) { weeklyTrends[weekStart] = { totalScore: 0, count: 0, name: weekStart }; } weeklyTrends[weekStart].totalScore += log.successScore; weeklyTrends[weekStart].count++; });
-        const trendData = Object.values(weeklyTrends).map(w => ({ ...w, avgScore: parseFloat(formatNumber(w.totalScore / w.count, 1)) })).sort((a, b) => new Date(a.name) - new Date(b.name));
-
-        const equipmentData = profile.equipment.map(eq => {
-            const eqLogs = logs.filter(l => l.equipment === eq.name); if (eqLogs.length === 0) return { name: eq.name, success: 0, normal: 0, fail: 0, count: 0 };
-            return { name: eq.name, success: eqLogs.filter(l => l.successScore >= 8).length, normal: eqLogs.filter(l => l.successScore >= 4 && l.successScore < 8).length, fail: eqLogs.filter(l => l.successScore < 4).length, count: eqLogs.length };
-        }).sort((a,b) => b.count - a.count);
-
-        const logsForThreshold = (selectedEquipment === '전체' ? logs : logs.filter(l => l.equipment === selectedEquipment)).filter(l => l.gnssErrorData);
-        const thresholdAnalysis = { data: [], auto: null, manual: null, mode: 'auto' };
-        if(selectedEquipment !== '전체') {
-            const eqProfile = profile.equipment.find(e => e.name === selectedEquipment);
-            if(eqProfile) {
-                thresholdAnalysis.mode = eqProfile.thresholdMode;
-                thresholdAnalysis.manual = eqProfile.manualThreshold;
-            }
-        }
-        thresholdAnalysis.data = logsForThreshold.map(log => ({ successScore: log.successScore, maxError: Math.max(...log.gnssErrorData.map(d => d.error_rate)), equipment: log.equipment, startTime: log.startTime, endTime: log.endTime }));
-        const errRatesOnFailure = logsForThreshold.filter(l => l.successScore < 8).flatMap(l => l.gnssErrorData.map(d => d.error_rate));
-        if (errRatesOnFailure.length >= 3) {
-            const p75 = [...errRatesOnFailure].sort((a, b) => a - b)[Math.floor(errRatesOnFailure.length * 0.75)];
-            thresholdAnalysis.auto = p75;
-        }
-
-        let logsForPca = (pcaSelectedEquipment === '전체' ? logs : logs.filter(l => l.equipment === pcaSelectedEquipment)).filter(l => l.gnssErrorData);
-        let pcaData = [];
-        if (logsForPca.length > 2) {
-            const generateClusterPoint = (centers, spread) => {
-                const center = centers[Math.floor(Math.random() * centers.length)];
-                const angle = Math.random() * 2 * Math.PI;
-                const radius = Math.sqrt(Math.random()) * spread;
-                const jitterX = (Math.random() - 0.5) * spread * 0.5;
-                const jitterY = (Math.random() - 0.5) * spread * 0.5;
-                return { x: center.x + jitterX + radius * Math.cos(angle), y: center.y + jitterY + radius * Math.sin(angle) };
-            };
-            const successCenters = [{x: -0.2, y: -0.1}, {x: -0.15, y: -0.15}, {x:-0.25, y:0.05}];
-            const failCenters = [{x: 0.2, y: 0.1}, {x: 0.15, y: 0.15}, {x:0.25, y:-0.05}];
-            const normalCenters = [{x: 0.05, y: 0.05}, {x: -0.05, y: 0.05}, {x: 0.05, y: -0.05}];
-
-            pcaData = logsForPca.map(log => {
-                let scoreCategory;
-                if (log.successScore >= 8) scoreCategory = 'success';
-                else if (log.successScore >= 4) scoreCategory = 'normal';
-                else scoreCategory = 'fail';
-
-                if (Math.random() < 0.1) {
-                    const categories = ['success', 'normal', 'fail'];
-                    scoreCategory = categories[Math.floor(Math.random() * categories.length)];
-                }
-
-                let point;
-                if (scoreCategory === 'success') { point = generateClusterPoint(successCenters, 0.12);
-                } else if (scoreCategory === 'fail') { point = generateClusterPoint(failCenters, 0.12);
-                } else { point = generateClusterPoint(normalCenters, 0.2); }
-
-                return { pc1: point.x, pc2: point.y, successScore: log.successScore, equipment: log.equipment, maxError: Math.max(...log.gnssErrorData.map(d => d.error_rate)), startTime: log.startTime, endTime: log.endTime };
-            });
-        }
-
-        const pcaDataByEquipment = pcaData.reduce((acc, point) => {
-            acc[point.equipment] = acc[point.equipment] || [];
-            acc[point.equipment].push(point);
-            return acc;
-        }, {});
-
-        return { totalLogs, avgScore: formatNumber(avgScore, 1), highErrorLogs, timeOfDayData, trendData, equipmentData, thresholdAnalysis, pcaDataByEquipment };
-    }, [logs, profile, selectedEquipment, pcaSelectedEquipment]);
-
-    if (!analysisData) return <div className="text-center text-gray-400 p-8">분석할 피드백 데이터가 없습니다.</div>;
-
-    const { totalLogs, avgScore, highErrorLogs, timeOfDayData, trendData, equipmentData, thresholdAnalysis, pcaDataByEquipment } = analysisData;
-    const getColorByScore = (score) => { if (score >= 8) return '#4ade80'; if (score >= 4) return '#facc15'; return '#f87171'; };
-
-    return (
-        <div className="space-y-6">
-            <h1 className="text-2xl font-bold text-white mb-6">피드백 종합 분석</h1>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <StatCard title="총 피드백 수" value={`${totalLogs} 건`} icon={<BarChart3 size={24}/>} color="cyan" />
-                <StatCard title="평균 작전 성공 점수" value={`${avgScore} 점`} icon={<Target size={24}/>} color="green" />
-                <StatCard title="임계값 초과 작전 수" value={`${highErrorLogs.length} 건`} icon={<ShieldAlert size={24}/>} color="red" />
-            </div>
-
-            <PredictionAccuracyAnalysis logs={logs} allForecastData={allForecastData} />
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
-                    <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-4 gap-2">
-                        <h2 className="text-lg font-semibold text-white">장비별 임계값 분석</h2>
-                        <select value={selectedEquipment} onChange={e => setSelectedEquipment(e.target.value)} className="bg-gray-900 border-gray-600 rounded-md px-3 py-1 text-sm w-full sm:w-auto">
-                            <option value="전체">전체 장비</option>
-                            {profile.equipment.map(eq => <option key={eq.id} value={eq.name}>{eq.name}</option>)}
-                        </select>
-                    </div>
-                    <ResponsiveContainer width="100%" height={400}>
-                        <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 0 }}>
-                            <CartesianGrid stroke="#4A5568" strokeDasharray="3 3"/>
-                            <XAxis type="number" dataKey="successScore" name="성공 점수" unit="점" stroke="#A0AEC0" domain={[0, 10]}/>
-                            <YAxis type="number" dataKey="maxError" name="최대 오차" unit="m" stroke="#A0AEC0" />
-                            <Tooltip content={<CustomScatterTooltip />} cursor={{ strokeDasharray: '3 3' }} />
-                            <Legend />
-                            <Scatter name="성공" data={thresholdAnalysis.data.filter(d => d.successScore >= 8)} fill="#4ade80" />
-                            <Scatter name="보통" data={thresholdAnalysis.data.filter(d => d.successScore >= 4 && d.successScore < 8)} fill="#facc15" />
-                            <Scatter name="실패" data={thresholdAnalysis.data.filter(d => d.successScore < 4)} fill="#f87171" />
-                            {selectedEquipment === '전체' && <ReferenceLine y={activeUnitThreshold} stroke="#fb923c" strokeDasharray="4 4" label={{ value: `부대 종합 임계값 (${formatNumber(activeUnitThreshold, 1)}m)`, position: 'insideTopLeft', fill: '#fb923c' }} /> }
-                            {selectedEquipment !== '전체' && thresholdAnalysis.mode === 'auto' && thresholdAnalysis.auto && <ReferenceLine y={thresholdAnalysis.auto} stroke="#60a5fa" strokeDasharray="4 4" label={{ value: `자동 임계값 (${formatNumber(thresholdAnalysis.auto, 1)}m)`, position: 'insideTopLeft', fill: '#60a5fa' }} /> }
-                            {selectedEquipment !== '전체' && thresholdAnalysis.mode === 'manual' && thresholdAnalysis.manual && <ReferenceLine y={thresholdAnalysis.manual} stroke="#f87171" label={{ value: `수동 임계값 (${formatNumber(thresholdAnalysis.manual, 1)}m)`, position: 'top', fill: '#f87171' }} /> }
-                            {selectedEquipment !== '전체' && thresholdAnalysis.mode === 'manual' && thresholdAnalysis.auto && <ReferenceLine y={thresholdAnalysis.auto} stroke="#60a5fa" strokeDasharray="4 4" label={{ value: `자동 (${formatNumber(thresholdAnalysis.auto, 1)}m)`, position: 'insideTopLeft', fill: '#60a5fa' }} /> }
-                        </ScatterChart>
-                    </ResponsiveContainer>
-                </div>
-
-                <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
-                     <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-4 gap-2">
-                         <h2 className="text-lg font-semibold text-white">가상 PCA 작전 요인 분석</h2>
-                         <select value={pcaSelectedEquipment} onChange={e => setPcaSelectedEquipment(e.target.value)} className="bg-gray-900 border-gray-600 rounded-md px-3 py-1 text-sm w-full sm:w-auto">
-                             <option value="전체">전체 장비</option>
-                             {profile.equipment.map(eq => <option key={eq.id} value={eq.name}>{eq.name}</option>)}
-                         </select>
-                     </div>
-                    <ResponsiveContainer width="100%" height={400}>
-                        {Object.keys(pcaDataByEquipment).length > 0 ? (
-                            <ScatterChart margin={{ top: 20, right: 30, bottom: 20, left: 20 }}>
-                                <CartesianGrid stroke="#4A5568" strokeDasharray="3 3"/>
-                                <XAxis type="number" dataKey="pc1" domain={[-0.5, 0.5]} stroke="#A0AEC0" tickFormatter={(v) => formatNumber(v, 1)}>
-                                    <Label value="PC1 (44.3%)" offset={-15} position="insideBottom" fill="#A0AEC0"/>
-                                </XAxis>
-                                <YAxis type="number" dataKey="pc2" domain={[-0.3, 0.3]} stroke="#A0AEC0" tickFormatter={(v) => formatNumber(v, 1)}>
-                                    <Label value="PC2 (19.2%)" angle={-90} offset={0} position="insideLeft" fill="#A0AEC0" style={{ textAnchor: 'middle' }}/>
-                                </YAxis>
-                                <Tooltip content={<CustomScatterTooltip />} cursor={{ strokeDasharray: '3 3' }} />
-                                {Object.entries(pcaDataByEquipment).map(([eqName, eqData]) => (
-                                    <Scatter key={eqName} name={eqName} data={eqData} shape={shapeMap[eqName] || 'cross'}>
-                                        {eqData.map((entry, index) => ( <Cell key={`cell-${index}`} fill={getColorByScore(entry.successScore)} /> ))}
-                                    </Scatter>
-                                ))}
-                            </ScatterChart>
-                        ) : <div className="flex items-center justify-center h-full text-gray-500">분석을 위한 데이터가 부족합니다.</div>}
-                    </ResponsiveContainer>
-                    <div className="flex flex-wrap justify-center items-center gap-x-6 gap-y-2 mt-2 text-xs text-gray-400">
-                        <div className="flex items-center gap-2"> <div className="w-3 h-3 rounded-full bg-green-500"/> <span>성공</span> </div>
-                        <div className="flex items-center gap-2"> <div className="w-3 h-3 rounded-full bg-yellow-500"/> <span>보통</span> </div>
-                        <div className="flex items-center gap-2"> <div className="w-3 h-3 rounded-full bg-red-500"/> <span>실패</span> </div>
-                         <div className="w-full h-px bg-gray-700 md:w-px md:h-4"></div>
-                        {Object.entries(shapeMap).map(([name, shape]) => (
-                            <div key={name} className="flex items-center gap-2"> <ShapeIcon shape={shape}/> <span>{name}</span></div>
-                        ))}
-                    </div>
-                </div>
-
-                <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
-                    <h2 className="text-lg font-semibold text-white mb-4">시간대별 작전 성공률</h2>
-                    <ResponsiveContainer width="100%" height={300}><BarChart data={timeOfDayData} margin={{ top: 20, right: 20, bottom: 5, left: 0 }}><CartesianGrid strokeDasharray="3 3" stroke="#4A5568" /><XAxis dataKey="label" stroke="#A0AEC0" tick={{fontSize: 12}} /><YAxis stroke="#A0AEC0" /><Tooltip contentStyle={{ backgroundColor: '#1A202C' }} formatter={(value) => formatNumber(value,0)} /><Legend /><Bar dataKey="s" stackId="a" fill="#4ade80" name="성공" /><Bar dataKey="n" stackId="a" fill="#facc15" name="보통" /><Bar dataKey="f" stackId="a" fill="#f87171" name="실패" /></BarChart></ResponsiveContainer>
-                </div>
-                 <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
-                    <h2 className="text-lg font-semibold text-white mb-4">주간 성공률 추이</h2>
-                    <ResponsiveContainer width="100%" height={300}><LineChart data={trendData} margin={{ top: 20, right: 20, bottom: 5, left: 0 }}><CartesianGrid strokeDasharray="3 3" stroke="#4A5568" /><XAxis dataKey="name" stroke="#A0AEC0" tick={{fontSize: 10}} /><YAxis stroke="#A0AEC0" domain={[0, 10]}/><Tooltip contentStyle={{ backgroundColor: '#1A202C' }} formatter={(value) => formatNumber(value,1)} /><Legend /><Line type="monotone" dataKey="avgScore" name="주간 평균 점수" stroke="#8884d8" /></LineChart></ResponsiveContainer>
-                </div>
-                <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
-                    <h2 className="text-lg font-semibold text-white mb-4">장비별 작전 수행 현황</h2>
-                    <ResponsiveContainer width="100%" height={300}><BarChart data={equipmentData} layout="vertical" margin={{ top: 20, right: 20, bottom: 5, left: 10 }}><CartesianGrid strokeDasharray="3 3" stroke="#4A5568" /><XAxis type="number" stroke="#A0AEC0" /><YAxis type="category" dataKey="name" stroke="#A0AEC0" width={100} tick={{fontSize: 12}} /><Tooltip contentStyle={{ backgroundColor: '#1A202C' }} formatter={(value) => formatNumber(value,0)} /><Legend /><Bar dataKey="success" stackId="a" fill="#4ade80" name="성공" /><Bar dataKey="normal" stackId="a" fill="#facc15" name="보통" /><Bar dataKey="fail" stackId="a" fill="#f87171" name="실패" /></BarChart></ResponsiveContainer>
-                </div>
-                <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
-                     <h2 className="text-lg font-semibold text-white mb-4">GNSS 오차 다발 지역</h2>
-                     <MapContainer key={profile.location.coords.lat + "-" + profile.location.coords.lon} center={[profile.location.coords.lat, profile.location.coords.lon]} zoom={10} style={{ height: "300px", width: "100%", borderRadius: "0.75rem" }}>
-                         <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; CARTO' />
-                         {highErrorLogs.map(log => { const pos = log.gnssErrorData[0]; const maxError = Math.max(...log.gnssErrorData.map(d => d.error_rate)); return <CircleMarker key={log.id} center={[pos.lat, pos.lon]} radius={6} pathOptions={{ color: '#f87171', fillColor: '#f87171', fillOpacity: 0.7 }}><LeafletTooltip>장비: {log.equipment}<br/>최대 오차: {formatNumber(maxError, 1)}m</LeafletTooltip></CircleMarker> })}
-                     </MapContainer>
-                </div>
-            </div>
-        </div>
-    );
-};
-const DashboardView = ({ profile, allForecastData, forecastStatus, logs, deleteLog, todoList, addTodo, updateTodo, deleteTodo, activeUnitThreshold, isRaining }) => {
-    const [selectedDate, setSelectedDate] = useState(null);
-    const [expandedLogId, setExpandedLogId] = useState(null);
-    const [animatingLogId, setAnimatingLogId] = useState(null);
-    const [animationProgress, setAnimationProgress] = useState(0);
-    const animationRef = useRef();
-    const [recommendedRange, setRecommendedRange] = useState(null);
-
-    const maxError = useMemo(() => {
-        if (!allForecastData || allForecastData.length === 0) return 0;
-        const now = new Date().getTime();
-        const next24h = now + 24 * 3600 * 1000;
-        const relevantData = allForecastData.filter(d => d.timestamp >= now && d.timestamp <= next24h);
-        return relevantData.length > 0 ? Math.max(...relevantData.map(d => d.fore_gnss)) : 0;
-    }, [allForecastData]);
-    const overallStatus = useMemo(() => { if (maxError > activeUnitThreshold) return { label: "위험", color: "text-red-400", bgColor: "bg-red-900/50" }; if (maxError > activeUnitThreshold * 0.7) return { label: "주의", color: "text-yellow-400", bgColor: "bg-yellow-900/50" }; return { label: "정상", color: "text-green-400", bgColor: "bg-green-900/50" }; }, [maxError, activeUnitThreshold]);
-    const logsByDate = useMemo(() => { const grouped = {}; logs.forEach(log => { const key = formatDateKey(log.startTime); if (!grouped[key]) grouped[key] = []; grouped[key].push(log); }); return grouped; }, [logs]);
-    const filteredLogs = useMemo(() => selectedDate ? logsByDate[formatDateKey(selectedDate)] || [] : logs.slice(0, 15), [selectedDate, logs, logsByDate]);
-    const handlePlayAnimation = (logId, e) => { e.stopPropagation(); cancelAnimationFrame(animationRef.current); if(animatingLogId === logId) { setAnimatingLogId(null); return; } setAnimatingLogId(logId); let startTime; const duration = 5000; const animate = (timestamp) => { if (!startTime) startTime = timestamp; const progress = Math.min((timestamp - startTime) / duration, 1); setAnimationProgress(progress); if (progress < 1) { animationRef.current = requestAnimationFrame(animate); } else { setAnimatingLogId(null); } }; animationRef.current = requestAnimationFrame(animate); };
-    const DayContentWithDots = (props) => {
-        const key = formatDateKey(props.date); const dayLogs = logsByDate[key];
-        const dots = dayLogs ? dayLogs.map(l => l.successScore).sort((a, b) => a - b).slice(0, 3).map(score => getSuccessScoreInfo(score).dotClass) : [];
-        return (<div className="relative w-full h-full flex justify-center items-center"><span className="z-10">{props.date.getDate()}</span><div className="absolute bottom-1 flex space-x-0.5">{dots.map((dotClass, i) => (<div key={i} className={`w-1.5 h-1.5 rounded-full ${dotClass}`}></div>))}</div></div>);
-    };
-
-    return (<>
-        <style>{`
-            .rdp-day_selected, .rdp-day_selected:focus-visible, .rdp-day_selected:hover { background-color: #0ea5e9 !important; color: white !important; }
-            .rdp-button:hover:not([disabled]):not(.rdp-day_selected) { background-color: #374151 !important; }
-            .rdp-day_today:not(.rdp-day_selected) { border: 1px solid #0ea5e9; color: #0ea5e9 !important; }
-            .rdp { color: #d1d5db; --rdp-cell-size: 48px; }
-            .rdp-nav_button { color: #0ea5e9 !important; }
-            .weather-tile-layer { filter: brightness(1.2) saturate(1.8) hue-rotate(200deg) contrast(1.5); }
-        `}</style>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 space-y-6">
-                <ForecastGraph allForecastData={allForecastData} forecastStatus={forecastStatus} activeUnitThreshold={activeUnitThreshold} recommendedRange={recommendedRange} />
-                <OptimalTimeRecommender allForecastData={allForecastData} onRecommendation={setRecommendedRange} activeUnitThreshold={activeUnitThreshold}/>
-                <FutureMissionPlanner allForecastData={allForecastData} profile={profile} />
-                <div className="lg:col-span-2 bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700">
-                    <div className="flex justify-between items-center mb-4"><h2 className="text-lg font-semibold text-white flex items-center"><CalendarIcon size={20} className="inline-block mr-2" />작전 캘린더 & 피드백 로그</h2>{selectedDate && <button onClick={() => setSelectedDate(null)} className="text-sm bg-cyan-600 hover:bg-cyan-700 px-3 py-1 rounded-md">전체 로그 보기</button>}</div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="flex justify-center"><DayPicker mode="single" selected={selectedDate} onSelect={setSelectedDate} locale={ko} components={{ DayContent: DayContentWithDots }} /></div>
-                        <div className="space-y-2 max-h-[350px] overflow-y-auto pr-2"><h3 className="font-semibold text-gray-300">{selectedDate ? formatDate(selectedDate, 'date') : '최근'} 피드백 <span className="text-cyan-400">({filteredLogs.length}건)</span></h3>{filteredLogs.length > 0 ? filteredLogs.map(log => (
-                        <div key={log.id} className="text-sm bg-gray-900/70 rounded-lg p-3 cursor-pointer" onClick={() => setExpandedLogId(prev => prev === log.id ? null : log.id)}>
-                            <div className="flex justify-between items-start"><div><p className="font-semibold text-gray-300">{log.equipment}</p><p className="text-xs text-gray-400">{formatDate(log.startTime)}</p></div><div className="flex items-center"><span className={`font-bold mr-2 ${getSuccessScoreInfo(log.successScore).color}`}>{log.successScore}점({getSuccessScoreInfo(log.successScore).label})</span><button onClick={(e) => { e.stopPropagation(); deleteLog(log.id); }} className="ml-1 text-red-400 hover:text-red-300 p-1"><Trash2 size={16} /></button></div></div>
-                            {expandedLogId === log.id && (
-                                <ExpandedLogView
-                                    log={log}
-                                    profile={profile}
-                                    animatingLogId={animatingLogId}
-                                    animationProgress={animationProgress}
-                                    handlePlayAnimation={handlePlayAnimation}
-                                    isRaining={isRaining}
-                                />
-                            )}
-                        </div>
-                        )) : <p className="text-gray-500 text-sm mt-4">{selectedDate ? '선택된 날짜에 기록된 피드백이 없습니다.' : '피드백 기록이 없습니다.'}</p>}</div>
-                    </div>
-                </div>
-            </div>
-            <div className="space-y-6">
-                <div className={`p-4 md:p-6 rounded-xl flex items-center gap-4 ${overallStatus.bgColor} border border-gray-700`}>
-                    <div className="flex items-center gap-4"><div><p className="text-gray-400 text-sm">향후 24시간 종합 위험도</p><p className={`text-3xl font-bold ${overallStatus.color}`}>{overallStatus.label}</p></div></div>
-                    <div className="w-full flex justify-around pt-4 md:pt-0 md:pl-6 border-t md:border-t-0 md:border-l border-gray-600"><div><p className="text-gray-400 text-sm">최대 예상 오차</p><p className="text-3xl font-bold text-white">{formatNumber(maxError)} m</p></div><div><p className="text-gray-400 text-sm">부대 임계값</p><p className="text-3xl font-bold text-cyan-400">{formatNumber(activeUnitThreshold)} m</p></div></div>
-                </div>
-                <XAIAnalysisReport allForecastData={allForecastData} threshold={activeUnitThreshold} />
-                <TodoList todoList={todoList} addTodo={addTodo} updateTodo={updateTodo} deleteTodo={deleteTodo} />
-                <LiveMap threshold={activeUnitThreshold} center={profile.location.coords} isRaining={isRaining}/>
-            </div>
-        </div>
-    </>);
-};
-
-const DeveloperTestView = ({ setLogs, setForecastData, allForecastData, goBack, setIsRaining }) => {
-    const generateMockLogs = () => { if (!window.confirm("기존 피드백을 삭제하고, 최근 100일간의 시연용 테스트 데이터를 대량 생성합니까?")) return; const newLogs = []; const today = new Date(); for (let i = 0; i < 100; i++) { const date = new Date(today); date.setDate(today.getDate() - i); const logCount = Math.floor(Math.random() * 5) + 5; for (let j = 0; j < logCount; j++) { const eq = { name: "JDAM", manualThreshold: 10, usesGeoData: true }; let successScore; let baseError; const outcomeRoll = Math.random(); if (outcomeRoll < 0.85) { successScore = Math.floor(8 + Math.random() * 3); baseError = 2 + Math.random() * (eq.manualThreshold * 0.5); } else if (outcomeRoll < 0.95) { successScore = Math.floor(4 + Math.random() * 4); baseError = eq.manualThreshold * 0.7 + Math.random() * (eq.manualThreshold * 0.3); } else { successScore = Math.floor(1 + Math.random() * 3); baseError = eq.manualThreshold * 1.1 + Math.random() * 5; } const startTime = new Date(date); startTime.setHours(Math.floor(Math.random() * 23), Math.floor(Math.random() * 60)); const endTime = new Date(startTime.getTime() + (30 + Math.floor(Math.random() * 90)) * 60000); const data = []; let curTime = new Date(startTime); const p0 = [36.7+Math.random()*0.5, 127.4+Math.random()*0.5]; const p1 = [36.7+Math.random()*0.5, 127.4+Math.random()*0.5]; const p2 = [36.7+Math.random()*0.5, 127.4+Math.random()*0.5]; let step = 0; while (curTime < endTime) { const err = Math.max(1.0, baseError + (Math.random() - 0.5) * 4); const entry = { date: curTime.toISOString(), error_rate: parseFloat(formatNumber(err))}; if (eq.usesGeoData) { const progress = step / ((endTime.getTime() - startTime.getTime()) / 60000 || 1); const pos = getPointOnBezierCurve(progress, p0, p1, p2); entry.lat = pos[0]; entry.lon = pos[1]; } data.push(entry); curTime.setMinutes(curTime.getMinutes() + 1); step++; } newLogs.push({ id: Date.now() + i * 100 + j, startTime: startTime.toISOString(), endTime: endTime.toISOString(), equipment: eq.name, successScore, gnssErrorData: data }); } } setLogs(newLogs.sort((a, b) => new Date(b.startTime) - new Date(a.startTime))); alert(`${newLogs.length}개의 테스트 피드백이 생성되었습니다.`); };
-    const clearLogs = () => { if (window.confirm("모든 피드백 데이터를 삭제하시겠습니까?")) { setLogs([]); alert("모든 피드백이 삭제되었습니다."); }};
-    const resetAppState = () => { if (window.confirm("앱의 모든 로컬 데이터(프로필, 피드백 로그)를 삭제하고 초기 상태로 되돌리시겠습니까?")) { localStorage.clear(); alert("앱 상태가 초기화되었습니다. 페이지를 새로고침합니다."); window.location.reload(); }};
-
-    const simulateSpaceWeather = (type) => {
-        setForecastData(prevData => {
-            const newData = JSON.parse(JSON.stringify(allForecastData)); // Use original data for clean slate
-            const now = new Date().getTime();
-            const targetTime = now + (3 + Math.random() * 5) * 3600 * 1000; // 3-8 hours from now
-
-            let alertMsg = '';
-            if(type === 'flare') {
-                for(let i = 0; i < newData.length; i++) {
-                    if (newData[i].timestamp > targetTime && newData[i].timestamp < targetTime + 2 * 3600 * 1000) {
-                        newData[i].xrsb = 5e-5;
-                        newData[i].fore_gnss = Math.max(newData[i].fore_gnss, 15 + Math.random() * 5);
-                    }
-                }
-                alertMsg = '강력한 태양 플레어 상황이 시뮬레이션 되었습니다.';
-            } else if (type === 'storm') {
-                 for(let i = 0; i < newData.length; i++) {
-                    if (newData[i].timestamp > targetTime && newData[i].timestamp < targetTime + 12 * 3600 * 1000) {
-                        newData[i].kp = 6 + Math.random() * 2; // Kp 6-8
-                         newData[i].fore_gnss = Math.max(newData[i].fore_gnss, 18 + Math.random() * 8);
-                    }
-                }
-                alertMsg = '강력한 지자기 폭풍 상황이 시뮬레이션 되었습니다.';
-            }
-            alert(alertMsg);
-            return newData;
-        });
-    };
-
-    return (<div className="bg-gray-800 p-6 md:p-8 rounded-xl border border-gray-700 max-w-2xl mx-auto">
-        <div className="flex items-center mb-6"><button onClick={goBack} className="mr-4 p-2 rounded-full hover:bg-gray-700"><ArrowLeft className="w-6 h-6" /></button><h2 className="text-xl md:text-2xl font-bold text-white">개발자 테스트 도구</h2></div>
-        <div className="space-y-6">
-            <div>
-                <h3 className="text-lg font-semibold text-white mb-3">발표 시연용 시나리오</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                     <button onClick={() => simulateSpaceWeather('flare')} className="w-full bg-orange-600 hover:bg-orange-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><Sun size={20} /><span>태양 플레어</span></button>
-                     <button onClick={() => simulateSpaceWeather('storm')} className="w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><Wind size={20} /><span>지자기 폭풍</span></button>
-                     <button onClick={() => setIsRaining(prev => !prev)} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><Cloud size={20} /><span>강수 상황</span></button>
-                </div>
-            </div>
-            <div>
-                <h3 className="text-lg font-semibold text-white mb-3">피드백 데이터 관리</h3>
-                <div className="flex space-x-4">
-                    <button onClick={generateMockLogs} className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><TestTube2 size={20} /><span>테스트 데이터 생성</span></button>
-                    <button onClick={clearLogs} className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><Eraser size={20} /><span>모든 데이터 삭제</span></button>
-                </div>
-            </div>
-            <div>
-                <h3 className="text-lg font-semibold text-white mb-3 text-red-400">위험 영역</h3>
-                <div className="flex space-x-4">
-                    <button onClick={resetAppState} className="w-full bg-red-800 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><RefreshCw size={20} /><span>앱 상태 전체 초기화</span></button>
-                </div>
-            </div>
-        </div>
-    </div>);
-};
-
 const TodoList = ({ todoList, addTodo, updateTodo, deleteTodo }) => {
     const [newTodo, setNewTodo] = useState({ text: '', time: '12:00', tag: '브리핑' });
     const [editingTodo, setEditingTodo] = useState(null);
@@ -1121,7 +702,7 @@ const FutureMissionPlanner = ({ allForecastData, profile }) => {
             <h2 className="text-lg font-semibold mb-4 text-white">미래 작전 계획 및 성공률 예측</h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-end">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                     <div>
+                    <div>
                         <label className="text-xs text-gray-400">작전 시작</label>
                         <input type="datetime-local" value={plan.startTime} onChange={e => setPlan(p => ({...p, startTime: e.target.value}))} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm" />
                     </div>
@@ -1156,7 +737,6 @@ const Header = ({ profile, setActiveView, activeView, onWeatherClick }) => {
     const [currentTime, setCurrentTime] = useState(new Date());
     const [weather, setWeather] = useState(null);
     const weatherButtonRef = useRef(null);
-    // ❗ OpenWeatherMap에서 발급받은 무료 API 키를 여기에 입력하세요.
     const OWM_API_KEY = "5e51e99c2fa4d10dbca840c7c1e1781e";
 
     useEffect(() => {
@@ -1175,11 +755,11 @@ const Header = ({ profile, setActiveView, activeView, onWeatherClick }) => {
                     }
                 }).catch(console.error);
             } else {
-                const mockWeather = {
-                    main: { temp: 23.5 },
-                    weather: [{ icon: '01d', description: '맑음' }]
-                };
-                setWeather(mockWeather);
+                 const mockWeather = {
+                     main: { temp: 23.5 },
+                     weather: [{ icon: '01d', description: '맑음' }]
+                 };
+                 setWeather(mockWeather);
             }
         };
 
@@ -1190,12 +770,13 @@ const Header = ({ profile, setActiveView, activeView, onWeatherClick }) => {
     }, [profile.location.coords.lat, profile.location.coords.lon]);
 
     const renderTime = () => {
-        const kst = currentTime.toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        const utc = currentTime.toLocaleTimeString('en-GB', { timeZone: 'UTC', hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        if (profile.timezone === 'BOTH') {
-            return ( <div className="text-right leading-tight"> <div>{kst} <span className="text-gray-400">KST</span></div> <div>{utc} <span className="text-gray-400">UTC</span></div> </div> );
-        }
-        return profile.timezone === 'KST' ? `${kst} KST` : `${utc} UTC`;
+        return currentTime.toLocaleTimeString('ko-KR', {
+            timeZone: 'Asia/Seoul',
+            hour12: false,
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
     };
 
     return (
@@ -1219,7 +800,7 @@ const Header = ({ profile, setActiveView, activeView, onWeatherClick }) => {
                         <span className="text-gray-300">{weather.weather[0].description}</span>
                     </button>
                 )}
-                <div className="hidden md:block text-sm font-semibold text-gray-300 font-mono"> {renderTime()} </div>
+                <div className="hidden md:block text-lg font-sans font-semibold text-gray-300"> {renderTime()} </div>
                 <div className="flex items-center space-x-2">
                     <button onClick={() => setActiveView('feedback')} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold p-2 rounded-lg flex items-center transition-colors" title="피드백 입력"><Plus className="w-5 h-5" /></button>
                     <button onClick={() => setActiveView('settings')} className="bg-gray-700 hover:bg-gray-600 text-white font-semibold p-2 rounded-lg flex items-center transition-colors" title="설정"><Settings className="w-5 h-5" /></button>
@@ -1283,24 +864,24 @@ const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold, r
             <h2 className="text-lg font-semibold mb-4 text-white">GNSS 오차 및 우주기상 예측</h2>
             <div style={{width: '100%', height: 250}}>
                 {forecastStatus.isLoading ? <div className="flex items-center justify-center h-full text-gray-400">데이터 로딩 중...</div>
-                 : forecastStatus.error ? <div className="flex items-center justify-center h-full text-red-400">{forecastStatus.error}</div>
-                 : dataForChart.length < 2 ? <div className="flex items-center justify-center h-full text-gray-400">표시할 데이터가 없습니다.</div>
-                 : (<ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={dataForChart} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" />
-                        <XAxis dataKey="timestamp" stroke="#A0AEC0" type="number" domain={[timeRange.start, timeRange.end]} ticks={niceTicks} tickFormatter={formatXAxis} />
-                        <YAxis yAxisId="left" label={{ value: 'GNSS 오차(m)', angle: -90, position: 'insideLeft', fill: '#A0AEC0' }} stroke="#F56565" />
-                        <YAxis yAxisId="right" orientation="right" label={{ value: '우주기상 지수', angle: 90, position: 'insideRight', fill: '#A0AEC0' }} stroke="#A0AEC0" />
-                        <Tooltip contentStyle={{ backgroundColor: '#1A202C' }} labelFormatter={(unixTime) => formatDate(unixTime, 'full')} formatter={(value) => formatNumber(value)}/>
-                        <Legend wrapperStyle={{fontSize: "12px"}}/>
-                        {Object.entries(dataKeys).map(([key, { name, color, axis }]) => (
-                             visibleData[key] && <Line key={key} yAxisId={axis} type="monotone" dataKey={key} name={name} stroke={color} dot={false} connectNulls />
-                        ))}
-                        {visibleData['fore_gnss'] && <ReferenceLine yAxisId="left" y={activeUnitThreshold} label={{ value: "부대 임계값", fill: "#4FD1C5" }} stroke="#4FD1C5" strokeDasharray="4 4" />}
-                        {isNowInRange && <ReferenceLine yAxisId="left" x={nowTimestamp} stroke="#fbbf24" strokeWidth={2} label={{ value: '현재', position: 'insideTop', fill: '#fbbf24' }} />}
-                        {recommendedRange && <ReferenceArea yAxisId="left" x1={recommendedRange.start} x2={recommendedRange.end} stroke="#4ade80" strokeOpacity={0.6} fill="#4ade80" fillOpacity={0.2} label={{ value: "추천 시간", position: "insideTop", fill: "#4ade80" }}/>}
-                    </LineChart>
-                </ResponsiveContainer>)}
+                   : forecastStatus.error ? <div className="flex items-center justify-center h-full text-red-400">{forecastStatus.error}</div>
+                   : dataForChart.length < 2 ? <div className="flex items-center justify-center h-full text-gray-400">표시할 데이터가 없습니다.</div>
+                   : (<ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={dataForChart} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" />
+                            <XAxis dataKey="timestamp" stroke="#A0AEC0" type="number" domain={[timeRange.start, timeRange.end]} ticks={niceTicks} tickFormatter={formatXAxis} />
+                            <YAxis yAxisId="left" label={{ value: 'GNSS 오차(m)', angle: -90, position: 'insideLeft', fill: '#A0AEC0' }} stroke="#F56565" />
+                            <YAxis yAxisId="right" orientation="right" label={{ value: '우주기상 지수', angle: 90, position: 'insideRight', fill: '#A0AEC0' }} stroke="#A0AEC0" />
+                            <Tooltip contentStyle={{ backgroundColor: '#1A202C' }} labelFormatter={(unixTime) => formatDate(unixTime, 'full')} formatter={(value) => formatNumber(value)}/>
+                            <Legend wrapperStyle={{fontSize: "12px"}}/>
+                            {Object.entries(dataKeys).map(([key, { name, color, axis }]) => (
+                                 visibleData[key] && <Line key={key} yAxisId={axis} type="monotone" dataKey={key} name={name} stroke={color} dot={false} connectNulls />
+                            ))}
+                            {visibleData['fore_gnss'] && <ReferenceLine yAxisId="left" y={activeUnitThreshold} label={{ value: "부대 임계값", fill: "#4FD1C5" }} stroke="#4FD1C5" strokeDasharray="4 4" />}
+                            {isNowInRange && <ReferenceLine yAxisId="left" x={nowTimestamp} stroke="#fbbf24" strokeWidth={2} label={{ value: '현재', position: 'insideTop', fill: '#fbbf24' }} />}
+                            {recommendedRange && <ReferenceArea yAxisId="left" x1={recommendedRange.start} x2={recommendedRange.end} stroke="#4ade80" strokeOpacity={0.6} fill="#4ade80" fillOpacity={0.2} label={{ value: "추천 시간", position: "insideTop", fill: "#4ade80" }}/>}
+                        </LineChart>
+                    </ResponsiveContainer>)}
             </div>
             <div className="flex flex-col xl:flex-row justify-between items-center mt-4 pt-4 border-t border-gray-700 gap-4">
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-x-4 gap-y-2 w-full">
@@ -1335,14 +916,42 @@ const LiveMap = ({threshold, center, isRaining}) => {
         error: 5 + Math.random() * 5
     })));
 
-    useEffect(() => { const timer = setInterval(() => setAircrafts(prev => prev.map(ac => ({ ...ac, progress: (ac.progress + ac.speed) % 1, error: Math.max(3.0, ac.error + (Math.random() - 0.5) * 2) }))), 2000); return () => clearInterval(timer); }, []);
+    useEffect(() => {
+        const timer = setInterval(() => {
+            setAircrafts(prev => prev.map(ac => ({
+                ...ac,
+                progress: (ac.progress + ac.speed) % 1,
+                error: Math.max(3.0, ac.error + (Math.random() - 0.5) * (isRaining ? 3 : 2)) // 강수 시 오차 변동폭 증가
+            })))
+        }, 2000);
+        return () => clearInterval(timer);
+    }, [isRaining]);
 
-    return (<div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700 h-96 flex flex-col"><h2 className="text-lg font-semibold mb-4 text-white">실시간 항적 및 기상</h2><div className="flex-grow relative"><MapContainer key={center.lat + "-" + center.lon} center={[center.lat, center.lon]} zoom={9} style={{ height: "100%", width: "100%", borderRadius: "0.75rem", backgroundColor: "#333" }}> <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; CARTO' /> {(showClouds || isRaining) && OWM_API_KEY !== "5e51e99c2fa4d10dbca840c7c1e1781e" && (
-        <>
-            {isRaining && <TileLayer url={`https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid=${OWM_API_KEY}`} attribution='&copy; OpenWeatherMap' zIndex={2} opacity={0.4}/>}
-            <TileLayer className="weather-tile-layer" url={`https://tile.openweathermap.org/map/precipitation_new/{z}/{x}/{y}.png?appid=${OWM_API_KEY}`} attribution='&copy; OpenWeatherMap' zIndex={3} opacity={isRaining ? 0.9 : 0.6}/>
-        </>
-    )} {aircrafts.map(ac => { let pos = getPointOnBezierCurve(ac.progress, ac.p0, ac.p1, ac.p2); return (<CircleMarker key={ac.id} center={pos} radius={6} pathOptions={{ color: getErrorColor(ac.error, threshold), fillColor: getErrorColor(ac.error, threshold), fillOpacity: 0.8 }}><LeafletTooltip>✈️ ID: {ac.id}<br />GNSS 오차: {formatNumber(ac.error)}m</LeafletTooltip></CircleMarker>); })} </MapContainer></div><div className="pt-2 mt-2 border-t border-gray-700"><label className="flex items-center gap-2 cursor-pointer text-sm text-gray-300"><input type="checkbox" checked={showClouds} onChange={e => setShowClouds(e.target.checked)} className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-500 rounded" />기상 오버레이 표시</label></div> </div>);
+    return (
+    <div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700 h-96 flex flex-col">
+        <h2 className="text-lg font-semibold mb-4 text-white">실시간 항적 및 기상</h2>
+        <div className="flex-grow relative">
+            <MapContainer key={center.lat + "-" + center.lon} center={[center.lat, center.lon]} zoom={9} style={{ height: "100%", width: "100%", borderRadius: "0.75rem", backgroundColor: "#333" }}>
+                 <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; CARTO' />
+                 {(showClouds || isRaining) && OWM_API_KEY !== "5e51e99c2fa4d10dbca840c7c1e1781e" && (
+                    <>
+                        <TileLayer url={`https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid=${OWM_API_KEY}`} attribution='&copy; OpenWeatherMap' zIndex={2} opacity={0.5}/>
+                        <TileLayer className="weather-tile-layer" url={`https://tile.openweathermap.org/map/precipitation_new/{z}/{x}/{y}.png?appid=${OWM_API_KEY}`} attribution='&copy; OpenWeatherMap' zIndex={3} opacity={isRaining ? 0.9 : 0.6}/>
+                    </>
+                )}
+                {aircrafts.map(ac => {
+                    let pos = getPointOnBezierCurve(ac.progress, ac.p0, ac.p1, ac.p2);
+                    return (<CircleMarker key={ac.id} center={pos} radius={6} pathOptions={{ color: getErrorColor(ac.error, threshold), fillColor: getErrorColor(ac.error, threshold), fillOpacity: 0.8 }}><LeafletTooltip>✈️ ID: {ac.id}<br />GNSS 오차: {formatNumber(ac.error)}m</LeafletTooltip></CircleMarker>);
+                })}
+            </MapContainer>
+        </div>
+        <div className="pt-2 mt-2 border-t border-gray-700">
+            <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-300">
+                <input type="checkbox" checked={showClouds} onChange={e => setShowClouds(e.target.checked)} className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-500 rounded" />
+                기상 오버레이 표시
+            </label>
+        </div>
+    </div>);
 };
 
 // ####################################################################
@@ -1437,7 +1046,7 @@ export default function App() {
     }, []);
     
     useEffect(() => {
-        if (!allForecastData || allForecastData.length === 0) return;
+        if (!allForecastData || allForecastData.length === 0 ) return;
 
         const now = new Date().getTime();
         const next24h = now + 24 * 3600 * 1000;
