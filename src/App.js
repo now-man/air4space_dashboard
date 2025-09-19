@@ -65,7 +65,7 @@ const DEFAULT_PROFILES_DATA = [
 ];
 
 // ####################################################################
-// ## ALL COMPONENT DEFINITIONS (DECLARED BEFORE `App`)
+// ## ALL COMPONENT DEFINITIONS (DECLARED BEFORE `App` TO FIX BUILD ERRORS)
 // ####################################################################
 
 // --- Sub-Components ---
@@ -199,351 +199,80 @@ const FeedbackMap = ({ data, equipment, isAnimating, animationProgress, showClou
     const bounds = useMemo(() => data.length > 0 ? L.latLngBounds(data.map(p => [p.lat, p.lon])) : null, [data]);
     const animatedPosition = useMemo(() => { if(!isAnimating || data.length < 2) return null; const totalPoints = data.length - 1; const currentIndex = Math.min(Math.floor(animationProgress * totalPoints), totalPoints - 1); const nextIndex = Math.min(currentIndex + 1, totalPoints); const segmentProgress = (animationProgress * totalPoints) - currentIndex; const p1 = data[currentIndex]; const p2 = data[nextIndex]; return { lat: p1.lat + (p2.lat - p1.lat) * segmentProgress, lon: p1.lon + (p2.lon - p1.lon) * segmentProgress, error: p1.error_rate }; }, [isAnimating, animationProgress, data]);
 
-    // Dynamic opacity for cloud timelapse effect
     const cloudOpacity = isAnimating ? 0.3 + 0.4 * Math.abs(Math.sin(animationProgress * Math.PI * 8)) : 0.6;
 
     return (<div className="mt-2 h-56 rounded-lg overflow-hidden relative"><MapContainer center={data[0] ? [data[0].lat, data[0].lon] : [36.6, 127.4]} zoom={11} style={{ height: "100%", width: "100%" }} scrollWheelZoom={false}> <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; CARTO' /> {showClouds && OWM_API_KEY !== "5e51e99c2fa4d10dbca840c7c1e1781e" && <TileLayer key={cloudOpacity} url={`https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid=${OWM_API_KEY}`} attribution='&copy; OpenWeatherMap' zIndex={2} opacity={cloudOpacity}/>} {isAnimating ? (<Polyline positions={data.map(p => [p.lat, p.lon])} color="#6b7280" weight={3} dashArray="5, 10" />) : (data.slice(1).map((p, i) => (<Polyline key={i} positions={[[data[i].lat, data[i].lon], [p.lat, p.lon]]} color={getErrorColor(data[i].error_rate, activeThreshold)} weight={5} />)))} {animatedPosition && <CircleMarker center={animatedPosition} radius={7} pathOptions={{ color: '#fff', fillColor: getErrorColor(animatedPosition.error, activeThreshold), weight: 2, fillOpacity: 1 }} />} <AutoFitBounds bounds={bounds} /> </MapContainer></div>);
 };
 const FeedbackChart = ({ data, equipment }) => { const activeThreshold = equipment.thresholdMode === 'auto' && equipment.autoThreshold ? equipment.autoThreshold : equipment.manualThreshold; const segments = useMemo(() => { const segs = []; let cur = null; data.forEach(d => { if (d.error_rate > activeThreshold) { if (!cur) cur = { x1: d.date, x2: d.date }; else cur.x2 = d.date; } else { if (cur) { segs.push(cur); cur = null; } } }); if (cur) segs.push(cur); return segs; }, [data, activeThreshold]); return (<div className="mt-4 h-40"><ResponsiveContainer width="100%" height="100%"><LineChart data={data} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}> <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" /><XAxis dataKey="date" stroke="#A0AEC0" tick={{ fontSize: 10 }} tickFormatter={(tick) => formatDate(tick, 'time')} /> <YAxis stroke="#A0AEC0" tick={{ fontSize: 10 }} domain={[0, 'dataMax + 2']} tickFormatter={(tick) => formatNumber(tick, 1)} /> <Tooltip contentStyle={{ backgroundColor: '#1A202C' }} labelFormatter={(label) => formatDate(label)} formatter={(value) => formatNumber(value)} /> <Line type="monotone" dataKey="error_rate" name="GNSS 오차(m)" stroke="#F56565" strokeWidth={2} dot={false} /> {segments.map((seg, i) => <ReferenceArea key={i} x1={seg.x1} x2={seg.x2} stroke="none" fill="#f56565" fillOpacity={0.3} />)} <ReferenceLine y={activeThreshold} label={{ value: "임계값", position: 'insideTopLeft', fill: '#4FD1C5', fontSize: 10 }} stroke="#4FD1C5" strokeDasharray="3 3" /> </LineChart></ResponsiveContainer></div>); };
-const XAIAnalysisReport = ({ allForecastData, threshold }) => {
-    const analysis = useMemo(() => {
-        if (!allForecastData || allForecastData.length === 0) return null;
-        const now = new Date().getTime();
-        const next24h = now + 24 * 3600 * 1000;
-        const relevantData = allForecastData.filter(d => d.timestamp >= now && d.timestamp <= next24h);
-        if (relevantData.length === 0) return { conclusion: "예측 데이터가 없습니다.", recommendation: "", factors: [] };
 
-        const maxErrorPoint = relevantData.reduce((max, p) => p.fore_gnss > max.fore_gnss ? p : max, { fore_gnss: 0 });
-        const maxError = maxErrorPoint.fore_gnss;
-
-        const factors = [];
-        if (maxErrorPoint.kp >= 6) factors.push({ severity: "높음", name: "Kp 지수", value: formatNumber(maxErrorPoint.kp, 1), cause: "지자기 폭풍", icon: <Wind size={16} className="text-yellow-400"/> });
-        if (maxErrorPoint.xrsb > 1e-5) factors.push({ severity: "높음", name: "X선 플럭스", value: maxErrorPoint.xrsb.toExponential(1), cause: "태양 플레어", icon: <Sun size={16} className="text-red-400"/> });
-        if (maxErrorPoint.tec_value > 50) factors.push({ severity: "높음", name: "총 전자 함유량(TEC)", value: formatNumber(maxErrorPoint.tec_value, 1), cause: "전리층 불안정", icon: <Zap size={16} className="text-blue-400"/>});
-
-        let conclusion = `24시간 내 최대 GNSS 오차는 **${formatNumber(maxError)}m**로 예측됩니다. 이는 부대 임계값 ${formatNumber(threshold)}m 대비 `;
-        let recommendation;
-
-        if (maxError > threshold) {
-            conclusion += "위험 수준입니다.";
-            recommendation = "정밀 타격 및 GNSS 의존도가 높은 임무 수행 시 각별한 주의가 필요하며, 대체 항법 수단 사용을 적극 고려해야 합니다.";
-        } else if (maxError > threshold * 0.7) {
-            conclusion += "주의 수준입니다.";
-            recommendation = "GNSS 민감 장비 운용 시 간헐적 오차 증가에 대비하고, 대체 항법 수단을 숙지하십시오.";
-        } else {
-            conclusion += "안정 수준입니다.";
-            recommendation = "모든 임무를 정상적으로 수행할 수 있습니다.";
-        }
-
-        if (factors.length > 0) {
-            const primaryFactor = factors[0];
-            conclusion += ` 주요 원인은 ${primaryFactor.cause}(${primaryFactor.name}: ${primaryFactor.value})으로 분석됩니다.`
-        } else if (maxError > threshold * 0.5) {
-            conclusion += ` 복합적인 우주기상 요인의 영향으로 보입니다.`
-        }
-
-        return { conclusion, recommendation, factors };
-    }, [allForecastData, threshold]);
-
-    if (!analysis) return null;
-
-    return (
-        <div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700">
-            <h2 className="text-lg font-semibold mb-4 text-white flex items-center"><BrainCircuit size={20} className="mr-2 text-cyan-300" />XAI 기반 상황 분석 보고</h2>
-            <div className="space-y-4 text-sm">
-                <div>
-                    <p className="font-semibold text-gray-300">종합 분석</p>
-                    <p className="text-gray-400">{parseStyledText(analysis.conclusion)}</p>
-                </div>
-                {analysis.factors.length > 0 && (
-                    <div>
-                        <p className="font-semibold text-gray-300">주요 영향 요인</p>
-                        <ul className="list-none space-y-1 mt-1">
-                            {analysis.factors.map(f => (
-                                <li key={f.name} className="flex items-center gap-2 p-2 bg-gray-900/50 rounded-md">
-                                    {f.icon}
-                                    <span className="font-semibold">{f.cause}</span>
-                                    <span className="text-gray-400">({f.name}: {f.value})</span>
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                )}
-                <div>
-                    <p className="font-semibold text-gray-300">권고 사항</p>
-                    <p className="text-gray-400">{analysis.recommendation}</p>
-                </div>
-            </div>
-        </div>
-    );
-};
-const TodoList = ({ todoList, addTodo, updateTodo, deleteTodo }) => {
-    const [newTodo, setNewTodo] = useState({ text: '', time: '12:00', tag: '브리핑' });
-    const [editingTodo, setEditingTodo] = useState(null);
-    const [menuOpenFor, setMenuOpenFor] = useState(null);
-    const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
-    const [tagMenuOpenFor, setTagMenuOpenFor] = useState(null);
-    const [tagMenuPosition, setTagMenuPosition] = useState({ top: 0, left: 0 });
-    const [customTag, setCustomTag] = useState('');
-    const menuRef = useRef(null);
-    const tagMenuRef = useRef(null);
-
-    const DEFAULT_TAGS = ['브리핑', '임무', '정비', '보고'];
-    const uniqueTags = useMemo(() => Array.from(new Set([...DEFAULT_TAGS, ...todoList.map(t => t.tag)])), [todoList]);
+// --- Main View Components ---
+const Header = ({ profile, setActiveView, activeView }) => {
+    const [currentTime, setCurrentTime] = useState(new Date());
+    const [weather, setWeather] = useState(null);
+    // ❗ OpenWeatherMap에서 발급받은 무료 API 키를 여기에 입력하세요.
+    const OWM_API_KEY = "5e51e99c2fa4d10dbca840c7c1e1781e";
 
     useEffect(() => {
-        const handleClickOutside = (event) => {
-            if (menuRef.current && !menuRef.current.contains(event.target)) setMenuOpenFor(null);
-            if (tagMenuRef.current && !tagMenuRef.current.contains(event.target)) setTagMenuOpenFor(null);
-        };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
+        const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+        return () => clearInterval(timer);
     }, []);
 
-    const handleMenuOpen = (e, item) => {
-        e.stopPropagation();
-        const rect = e.currentTarget.getBoundingClientRect();
-        setMenuPosition({ top: rect.bottom + window.scrollY + 5, left: rect.left + window.scrollX });
-        setMenuOpenFor(item.id);
-    };
-
-    const openTagMenu = (e, id) => {
-        e.stopPropagation();
-        const rect = e.currentTarget.getBoundingClientRect();
-        const isNew = id === 'new';
-        setTagMenuPosition({
-            top: isNew ? rect.top + window.scrollY - 5 : rect.bottom + window.scrollY + 5,
-            left: rect.left + window.scrollX,
-            transform: isNew ? 'translateY(-100%)' : 'none'
-        });
-        setTagMenuOpenFor(id);
-    };
-
-    const handleAdd = () => {
-        if (newTodo.text) {
-            addTodo(newTodo);
-            setNewTodo({ text: '', time: '12:00', tag: '브리핑' });
-        }
-    };
-    const handleSave = (id) => {
-        updateTodo(editingTodo);
-        setEditingTodo(null);
-    };
-
-    const handleCustomTagSave = (id) => {
-        if (customTag) {
-            if (id === 'new') {
-                setNewTodo(prev => ({...prev, tag: customTag}));
-            } else {
-                setEditingTodo(prev => ({...prev, tag: customTag}));
-            }
-            setCustomTag('');
-            setTagMenuOpenFor(null);
-        }
-    }
-
-    const MenuPopover = () => (
-        menuOpenFor && createPortal(
-            <div ref={menuRef} className="fixed z-20 w-32 bg-gray-700 border border-gray-600 rounded-md shadow-lg p-2 space-y-1" style={{ top: menuPosition.top, left: menuPosition.left, transform: 'translateX(-100%)' }}>
-                <button onClick={() => { setEditingTodo(todoList.find(t => t.id === menuOpenFor)); setMenuOpenFor(null); }} className="w-full text-left px-2 py-1 hover:bg-gray-600 rounded flex items-center gap-2"><Edit size={14}/> 수정</button>
-                <button onClick={() => { deleteTodo(menuOpenFor); setMenuOpenFor(null); }} className="w-full text-left px-2 py-1 hover:bg-gray-600 rounded flex items-center gap-2 text-red-400"><Trash2 size={14}/> 삭제</button>
-            </div>,
-            document.body
-        )
-    );
-
-    const TagMenu = ({ id, onSelect, onCustomSave }) => (
-        tagMenuOpenFor === id && createPortal(
-            <div ref={tagMenuRef} className="fixed z-20 w-40 bg-gray-700 border border-gray-600 rounded-md shadow-lg p-2 space-y-1" style={{...tagMenuPosition}}>
-                {uniqueTags.map(tag => <button key={tag} onClick={() => onSelect(tag)} className="w-full text-left px-2 py-1 hover:bg-gray-600 rounded">{tag}</button>)}
-                <div className="flex gap-1 pt-1 border-t border-gray-600"><input value={customTag} onChange={e => setCustomTag(e.target.value)} placeholder="직접 입력" className="w-full bg-gray-800 text-xs p-1 rounded"/><button onClick={onCustomSave} className="bg-blue-600 p-1 rounded"><Save size={12}/></button></div>
-            </div>,
-            document.body
-        )
-    );
-
-    return (
-      <div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700">
-        <h2 className="text-lg font-semibold mb-4 text-white flex items-center"><Activity size={20} className="mr-2" />금일 주요 활동</h2>
-        <div className="space-y-2 max-h-56 overflow-y-auto pr-2">
-            {todoList.map(item => (
-                <div key={item.id} className="flex items-center gap-3 text-sm group">
-                    {editingTodo?.id === item.id ? (
-                        <>
-                            <input type="time" value={editingTodo.time} onChange={e => setEditingTodo({...editingTodo, time: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-auto" />
-                            <input type="text" value={editingTodo.text} onChange={e => setEditingTodo({...editingTodo, text: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm flex-grow" />
-                            <button onClick={(e) => openTagMenu(e, item.id)} className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-0.5 rounded-full flex items-center gap-1">{editingTodo.tag} <ChevronDown size={12}/></button>
-                            <TagMenu id={item.id} onSelect={(tag) => { setEditingTodo({...editingTodo, tag}); setTagMenuOpenFor(null); }} onCustomSave={() => handleCustomTagSave(item.id)} />
-                            <button onClick={() => handleSave(item.id)} className="p-1 text-green-400 hover:text-green-300"><Save size={16}/></button>
-                            <button onClick={() => setEditingTodo(null)} className="p-1 text-gray-400 hover:text-white"><X size={16}/></button>
-                        </>
-                    ) : (
-                        <>
-                            <span className="font-semibold text-cyan-400">{item.time}</span>
-                            <span className="flex-grow">{item.text}</span>
-                            <span className="text-xs bg-gray-700 px-2 py-0.5 rounded-full">{item.tag}</span>
-                            <button onClick={(e) => handleMenuOpen(e, item)} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-white"><MoreVertical size={16}/></button>
-                        </>
-                    )}
-                </div>
-            ))}
-        </div>
-        <MenuPopover />
-        <div className="flex gap-2 mt-4 pt-4 border-t border-gray-700">
-            <input type="time" value={newTodo.time} onChange={e => setNewTodo({...newTodo, time: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-auto" />
-            <input type="text" placeholder="활동 내용" value={newTodo.text} onChange={e => setNewTodo({...newTodo, text: e.target.value})} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm flex-grow" />
-            <button onClick={(e) => openTagMenu(e, 'new')} className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-0.5 rounded-full flex items-center gap-1">{newTodo.tag} <ChevronDown size={12}/></button>
-            <TagMenu id={'new'} onSelect={(tag) => { setNewTodo({...newTodo, tag}); setTagMenuOpenFor(null); }} onCustomSave={() => handleCustomTagSave('new')} />
-            <button onClick={handleAdd} className="bg-blue-600 hover:bg-blue-700 rounded p-2"><Plus size={16} /></button>
-        </div>
-      </div>
-    );
-};
-const OptimalTimeRecommender = ({ allForecastData, onRecommendation }) => {
-    const [searchStart, setSearchStart] = useState(() => toLocalISOString(new Date()));
-    const [searchEnd, setSearchEnd] = useState(() => toLocalISOString(new Date(new Date().getTime() + 48 * 3600 * 1000)));
-    const [duration, setDuration] = useState(3);
-    const [result, setResult] = useState(null);
-
-    const handleRecommend = () => {
-        const searchStartTs = new Date(searchStart).getTime();
-        const searchEndTs = new Date(searchEnd).getTime();
-
-        // Data points are hourly, so duration is in hours.
-        const durationInPoints = duration;
-
-        const relevantData = allForecastData.filter(d => d.timestamp >= searchStartTs && d.timestamp <= searchEndTs);
-        if (relevantData.length < durationInPoints) {
-            setResult("해당 시간 범위의 예측 데이터가 작전 시간보다 짧습니다.");
-            onRecommendation(null);
-            return;
-        }
-
-        let minSum = Infinity;
-        let bestStartTime = null;
-
-        for (let i = 0; i <= relevantData.length - durationInPoints; i++) {
-            const window = relevantData.slice(i, i + durationInPoints);
-            const currentSum = window.reduce((sum, d) => sum + d.fore_gnss, 0);
-
-            if (currentSum < minSum) {
-                minSum = currentSum;
-                bestStartTime = window[0].timestamp;
-            }
-        }
-
-        if (bestStartTime) {
-            const recommendedEnd = bestStartTime + duration * 3600 * 1000;
-            setResult(`추천 작전 시간: ${formatDate(bestStartTime, 'full')} ~ ${formatDate(recommendedEnd, 'time')}`);
-            onRecommendation({start: bestStartTime, end: recommendedEnd});
+    useEffect(() => {
+        if(profile.location.coords.lat && OWM_API_KEY !== "5e51e99c2fa4d10dbca840c7c1e1781e") {
+            fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${profile.location.coords.lat}&lon=${profile.location.coords.lon}&appid=${OWM_API_KEY}&units=metric&lang=kr`)
+            .then(res => res.json())
+            .then(data => {
+                if(data.cod === 200) {
+                    setWeather(data);
+                }
+            }).catch(console.error);
         } else {
-            setResult("추천 가능한 시간대를 찾을 수 없습니다.");
-            onRecommendation(null);
+             const mockWeather = {
+                main: { temp: 23.5 },
+                weather: [{ icon: '01d', description: '맑음' }]
+            };
+            setWeather(mockWeather);
         }
+    }, [profile.location.coords.lat, profile.location.coords.lon]);
+
+    const renderTime = () => {
+        const kst = currentTime.toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const utc = currentTime.toLocaleTimeString('en-GB', { timeZone: 'UTC', hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        if (profile.timezone === 'BOTH') {
+            return ( <div className="text-right leading-tight"> <div>{kst} <span className="text-gray-400">KST</span></div> <div>{utc} <span className="text-gray-400">UTC</span></div> </div> );
+        }
+        return profile.timezone === 'KST' ? `${kst} KST` : `${utc} UTC`;
     };
 
     return (
-        <div className="bg-gray-800 p-4 rounded-xl border border-gray-700">
-            <h2 className="text-lg font-semibold mb-4 text-white">최적 작전 시간 추천</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
-                <div>
-                    <label className="text-xs text-gray-400">탐색 시작</label>
-                    <input type="datetime-local" value={searchStart} min={toLocalISOString(new Date())} onChange={e => setSearchStart(e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm" />
+        <header className="flex items-center justify-between p-4 bg-gray-800 border-b border-gray-700">
+            <button onClick={() => setActiveView('dashboard')} className="flex items-center space-x-3 cursor-pointer hover:opacity-80 transition-opacity">
+                <ShieldAlert className="w-8 h-8 text-cyan-400 flex-shrink-0" />
+                <div className="text-left">
+                    <h1 className="text-lg md:text-xl font-bold text-white leading-tight">{profile.name}</h1>
+                    <p className="text-xs text-gray-400 hidden md:block">우주기상 기반 GNSS 오차 분석 대시보드</p>
                 </div>
-                 <div>
-                    <label className="text-xs text-gray-400">탐색 종료</label>
-                    <input type="datetime-local" value={searchEnd} min={searchStart} onChange={e => setSearchEnd(e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm" />
-                </div>
-                <div>
-                    <label className="text-xs text-gray-400">작전 시간 (시간)</label>
-                    <input type="number" value={duration} min="1" onChange={e => setDuration(parseInt(e.target.value, 10))} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm" />
-                </div>
-                <button onClick={handleRecommend} className="bg-blue-600 hover:bg-blue-700 rounded-lg p-2 flex items-center justify-center gap-2 h-10"><Search size={16}/> 추천 받기</button>
+            </button>
+            <div className="hidden md:flex items-center space-x-2">
+                <button onClick={() => setActiveView('dashboard')} className={`px-4 py-2 text-sm font-semibold rounded-lg flex items-center gap-2 ${activeView === 'dashboard' ? 'bg-cyan-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}><Home size={16}/> 홈</button>
+                <button onClick={() => setActiveView('analysis')} className={`px-4 py-2 text-sm font-semibold rounded-lg flex items-center gap-2 ${activeView === 'analysis' ? 'bg-cyan-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}><BarChart3 size={16}/> 피드백 및 분석</button>
             </div>
-            {result && <p className="text-center text-cyan-400 mt-4 font-semibold">{result}</p>}
-        </div>
-    );
-};
-const FutureMissionPlanner = ({ allForecastData, profile }) => {
-    const [plan, setPlan] = useState({
-        name: '정밀 타격 훈련',
-        startTime: toLocalISOString(new Date(new Date().getTime() + 24 * 3600 * 1000)),
-        endTime: toLocalISOString(new Date(new Date().getTime() + 26 * 3600 * 1000)),
-        equipment: profile.equipment.length > 0 ? profile.equipment[0].name : '',
-    });
-    const [prediction, setPrediction] = useState(null);
-
-    const handlePredict = () => {
-        const startTimeTs = new Date(plan.startTime).getTime();
-        const endTimeTs = new Date(plan.endTime).getTime();
-
-        if (startTimeTs >= endTimeTs) {
-            alert("종료 시간은 시작 시간보다 늦어야 합니다.");
-            return;
-        }
-
-        const relevantData = allForecastData.filter(d => d.timestamp >= startTimeTs && d.timestamp <= endTimeTs);
-        if (relevantData.length === 0) {
-            setPrediction({ error: "해당 시간 범위의 예측 데이터가 없습니다." });
-            return;
-        }
-
-        const equipmentProfile = profile.equipment.find(e => e.name === plan.equipment);
-        const threshold = equipmentProfile.thresholdMode === 'auto' && equipmentProfile.autoThreshold ? equipmentProfile.autoThreshold : equipmentProfile.manualThreshold;
-
-        const errors = relevantData.map(d => d.fore_gnss);
-        const maxError = Math.max(...errors);
-        const avgError = errors.reduce((sum, err) => sum + err, 0) / errors.length;
-        const overThresholdCount = errors.filter(err => err > threshold).length;
-        const riskRatio = (overThresholdCount / errors.length) * 100;
-
-        let successRate = 100 - (riskRatio * 1.5) - (avgError / threshold * 20);
-        successRate = Math.max(0, Math.min(99, successRate));
-
-        setPrediction({
-            maxError: maxError.toFixed(2),
-            avgError: avgError.toFixed(2),
-            riskRatio: riskRatio.toFixed(1),
-            successRate: successRate.toFixed(1),
-            threshold: threshold.toFixed(2),
-            error: null,
-        });
-    };
-
-    return (
-        <div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700">
-            <h2 className="text-lg font-semibold mb-4 text-white">미래 작전 계획 및 성공률 예측</h2>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-end">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                     <div>
-                        <label className="text-xs text-gray-400">작전 시작</label>
-                        <input type="datetime-local" value={plan.startTime} onChange={e => setPlan(p => ({...p, startTime: e.target.value}))} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm" />
+            <div className="flex items-center space-x-2 md:space-x-4">
+                {weather && (
+                    <div className="hidden sm:flex items-center gap-2 text-sm bg-gray-700/50 px-3 py-1.5 rounded-lg">
+                        <img src={`https://openweathermap.org/img/wn/${weather.weather[0].icon}.png`} alt={weather.weather[0].description} className="w-7 h-7" />
+                        <span className="font-semibold text-white">{formatNumber(weather.main.temp, 1)}°C</span>
+                        <span className="text-gray-300">{weather.weather[0].description}</span>
                     </div>
-                    <div>
-                        <label className="text-xs text-gray-400">작전 종료</label>
-                        <input type="datetime-local" value={plan.endTime} min={plan.startTime} onChange={e => setPlan(p => ({...p, endTime: e.target.value}))} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm" />
-                    </div>
-                    <div className="sm:col-span-2">
-                        <label className="text-xs text-gray-400">주요 운용 장비</label>
-                        <select value={plan.equipment} onChange={e => setPlan(p => ({...p, equipment: e.target.value}))} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm">
-                            {profile.equipment.map(eq => <option key={eq.id} value={eq.name}>{eq.name}</option>)}
-                        </select>
-                    </div>
-                </div>
-                <div className="flex flex-col gap-4">
-                     <button onClick={handlePredict} className="bg-blue-600 hover:bg-blue-700 rounded-lg p-2 flex items-center justify-center gap-2 h-10 w-full"><BotMessageSquare size={16}/> 성공률 예측</button>
-                    {prediction && !prediction.error && (
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-center bg-gray-900/50 p-3 rounded-lg">
-                            <div><p className="text-xs text-gray-400">예상 성공률</p><p className={`text-xl font-bold ${getSuccessScoreInfo(prediction.successRate/10).color}`}>{prediction.successRate}%</p></div>
-                            <div><p className="text-xs text-gray-400">최대 오차</p><p className={`text-xl font-bold ${getErrorColor(prediction.maxError, prediction.threshold)}`}>{prediction.maxError}m</p></div>
-                            <div><p className="text-xs text-gray-400">평균 오차</p><p className="text-xl font-bold text-white">{prediction.avgError}m</p></div>
-                            <div><p className="text-xs text-gray-400">위험 시간 비율</p><p className="text-xl font-bold text-yellow-400">{prediction.riskRatio}%</p></div>
-                        </div>
-                    )}
-                    {prediction && prediction.error && <p className="text-center text-red-400 mt-2 font-semibold">{prediction.error}</p>}
+                )}
+                <div className="hidden md:block text-sm font-semibold text-gray-300 font-mono"> {renderTime()} </div>
+                <div className="flex items-center space-x-2">
+                    <button onClick={() => setActiveView('feedback')} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold p-2 rounded-lg flex items-center transition-colors" title="피드백 입력"><Plus className="w-5 h-5" /></button>
+                    <button onClick={() => setActiveView('settings')} className="bg-gray-700 hover:bg-gray-600 text-white font-semibold p-2 rounded-lg flex items-center transition-colors" title="설정"><Settings className="w-5 h-5" /></button>
+                    <button onClick={() => setActiveView('dev')} className={`font-semibold p-2 rounded-lg flex items-center transition-colors ${activeView === 'dev' ? 'bg-indigo-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}`} title="개발자 테스트"><TestTube2 className="w-5 h-5" /></button>
                 </div>
             </div>
-        </div>
+        </header>
     );
 };
 const SettingsView = ({ profiles, setProfiles, activeProfile, setActiveProfileId, goBack, createDefaultProfile }) => {
@@ -943,188 +672,6 @@ const DashboardView = ({ profile, allForecastData, forecastStatus, logs, deleteL
     </>);
 };
 
-// --- Main View Components ---
-const Header = ({ profile, setActiveView, activeView }) => {
-    const [currentTime, setCurrentTime] = useState(new Date());
-    const [weather, setWeather] = useState(null);
-    // ❗ OpenWeatherMap에서 발급받은 무료 API 키를 여기에 입력하세요.
-    const OWM_API_KEY = "5e51e99c2fa4d10dbca840c7c1e1781e";
-
-    useEffect(() => {
-        const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-        return () => clearInterval(timer);
-    }, []);
-
-    useEffect(() => {
-        if(profile.location.coords.lat && OWM_API_KEY !== "5e51e99c2fa4d10dbca840c7c1e1781e") {
-            fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${profile.location.coords.lat}&lon=${profile.location.coords.lon}&appid=${OWM_API_KEY}&units=metric&lang=kr`)
-            .then(res => res.json())
-            .then(data => {
-                if(data.cod === 200) {
-                    setWeather(data);
-                }
-            }).catch(console.error);
-        } else {
-             const mockWeather = {
-                main: { temp: 23.5 },
-                weather: [{ icon: '01d', description: '맑음' }]
-            };
-            setWeather(mockWeather);
-        }
-    }, [profile.location.coords.lat, profile.location.coords.lon]);
-
-    const renderTime = () => {
-        const kst = currentTime.toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        const utc = currentTime.toLocaleTimeString('en-GB', { timeZone: 'UTC', hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        if (profile.timezone === 'BOTH') {
-            return ( <div className="text-right leading-tight"> <div>{kst} <span className="text-gray-400">KST</span></div> <div>{utc} <span className="text-gray-400">UTC</span></div> </div> );
-        }
-        return profile.timezone === 'KST' ? `${kst} KST` : `${utc} UTC`;
-    };
-
-    return (
-        <header className="flex items-center justify-between p-4 bg-gray-800 border-b border-gray-700">
-            <button onClick={() => setActiveView('dashboard')} className="flex items-center space-x-3 cursor-pointer hover:opacity-80 transition-opacity">
-                <ShieldAlert className="w-8 h-8 text-cyan-400 flex-shrink-0" />
-                <div className="text-left">
-                    <h1 className="text-lg md:text-xl font-bold text-white leading-tight">{profile.name}</h1>
-                    <p className="text-xs text-gray-400 hidden md:block">우주기상 기반 GNSS 오차 분석 대시보드</p>
-                </div>
-            </button>
-            <div className="hidden md:flex items-center space-x-2">
-                <button onClick={() => setActiveView('dashboard')} className={`px-4 py-2 text-sm font-semibold rounded-lg flex items-center gap-2 ${activeView === 'dashboard' ? 'bg-cyan-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}><Home size={16}/> 홈</button>
-                <button onClick={() => setActiveView('analysis')} className={`px-4 py-2 text-sm font-semibold rounded-lg flex items-center gap-2 ${activeView === 'analysis' ? 'bg-cyan-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}><BarChart3 size={16}/> 피드백 및 분석</button>
-            </div>
-            <div className="flex items-center space-x-2 md:space-x-4">
-                {weather && (
-                    <div className="hidden sm:flex items-center gap-2 text-sm bg-gray-700/50 px-3 py-1.5 rounded-lg">
-                        <img src={`https://openweathermap.org/img/wn/${weather.weather[0].icon}.png`} alt={weather.weather[0].description} className="w-7 h-7" />
-                        <span className="font-semibold text-white">{formatNumber(weather.main.temp, 1)}°C</span>
-                        <span className="text-gray-300">{weather.weather[0].description}</span>
-                    </div>
-                )}
-                <div className="hidden md:block text-sm font-semibold text-gray-300 font-mono"> {renderTime()} </div>
-                <div className="flex items-center space-x-2">
-                    <button onClick={() => setActiveView('feedback')} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold p-2 rounded-lg flex items-center transition-colors" title="피드백 입력"><Plus className="w-5 h-5" /></button>
-                    <button onClick={() => setActiveView('settings')} className="bg-gray-700 hover:bg-gray-600 text-white font-semibold p-2 rounded-lg flex items-center transition-colors" title="설정"><Settings className="w-5 h-5" /></button>
-                    <button onClick={() => setActiveView('dev')} className={`font-semibold p-2 rounded-lg flex items-center transition-colors ${activeView === 'dev' ? 'bg-indigo-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}`} title="개발자 테스트"><TestTube2 className="w-5 h-5" /></button>
-                </div>
-            </div>
-        </header>
-    );
-};
-// --- Dashboard Sub-components ---
-const ForecastGraph = ({ allForecastData, forecastStatus, activeUnitThreshold, recommendedRange }) => {
-    const dataKeys = {
-        fore_gnss: { name: '예측 GNSS', color: '#f87171', axis: 'left' },
-        real_gnss: { name: '실제 GNSS', color: '#fca5a5', axis: 'left' },
-        tec_value: { name: 'TEC', color: '#60a5fa', axis: 'right' },
-        xrsb:      { name: 'XRSB', color: '#a78bfa', axis: 'right' },
-        kp10:      { name: 'Kp', color: '#facc15', axis: 'right' },
-        dst:       { name: 'Dst', color: '#4ade80', axis: 'right' },
-    };
-    const [visibleData, setVisibleData] = useState({ fore_gnss: true, real_gnss: false, tec_value: true, xrsb: false, kp10: false, dst: false });
-    const [timeRange, setTimeRange] = useState({ start: null, end: null });
-
-    useEffect(() => {
-        if (allForecastData && allForecastData.length > 0) {
-            const now = new Date().getTime();
-            const defaultStart = now - 12 * 3600 * 1000;
-            const defaultEnd = now + 24 * 3600 * 1000;
-            const dataMin = allForecastData[0].timestamp;
-            const dataMax = allForecastData[allForecastData.length - 1].timestamp;
-            setTimeRange({ start: Math.max(defaultStart, dataMin), end: Math.min(defaultEnd, dataMax) });
-        }
-    }, [allForecastData]);
-
-    const dataForChart = useMemo(() => {
-        if (!allForecastData || !timeRange.start) return [];
-
-        const cutoffDate = new Date();
-        cutoffDate.setMinutes(cutoffDate.getMinutes() - 10);
-        cutoffDate.setMinutes(0, 0, 0);
-        const cutoffTimestamp = cutoffDate.getTime();
-
-        return allForecastData
-            .filter(d => d.timestamp >= timeRange.start && d.timestamp <= timeRange.end)
-            .map(d => ({
-                ...d,
-                real_gnss: d.timestamp > cutoffTimestamp ? null : d.real_gnss
-            }));
-    }, [allForecastData, timeRange]);
-
-    const nowTimestamp = new Date().getTime();
-    const isNowInRange = nowTimestamp >= (timeRange.start || 0) && nowTimestamp <= (timeRange.end || Infinity);
-
-    const niceTicks = useMemo(() => {
-        if (!timeRange.start) return [];
-        return generateNiceTicks(timeRange.start, timeRange.end);
-    }, [timeRange]);
-
-    const formatXAxis = (tick) => {
-        if (!timeRange.start) return '';
-        const duration = timeRange.end - timeRange.start;
-        return duration <= 2 * 24 * 3600 * 1000 ? formatDate(tick, 'time') : formatDate(tick, 'date');
-    };
-
-    return (
-        <div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700">
-            <h2 className="text-lg font-semibold mb-4 text-white">GNSS 오차 및 우주기상 예측</h2>
-            <div style={{width: '100%', height: 250}}>
-                {forecastStatus.isLoading ? <div className="flex items-center justify-center h-full text-gray-400">데이터 로딩 중...</div>
-                 : forecastStatus.error ? <div className="flex items-center justify-center h-full text-red-400">{forecastStatus.error}</div>
-                 : dataForChart.length < 2 ? <div className="flex items-center justify-center h-full text-gray-400">표시할 데이터가 없습니다.</div>
-                 : (<ResponsiveContainer width="100%" height="100%">
-                     <LineChart data={dataForChart} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" />
-                        <XAxis dataKey="timestamp" stroke="#A0AEC0" type="number" domain={[timeRange.start, timeRange.end]} ticks={niceTicks} tickFormatter={formatXAxis} />
-                        <YAxis yAxisId="left" label={{ value: 'GNSS 오차(m)', angle: -90, position: 'insideLeft', fill: '#A0AEC0' }} stroke="#F56565" />
-                        <YAxis yAxisId="right" orientation="right" label={{ value: '우주기상 지수', angle: 90, position: 'insideRight', fill: '#A0AEC0' }} stroke="#A0AEC0" />
-                        <Tooltip contentStyle={{ backgroundColor: '#1A202C' }} labelFormatter={(unixTime) => formatDate(unixTime, 'full')} />
-                        <Legend wrapperStyle={{fontSize: "12px"}}/>
-                        {Object.entries(dataKeys).map(([key, { name, color, axis }]) => (
-                             visibleData[key] && <Line key={key} yAxisId={axis} type="monotone" dataKey={key} name={name} stroke={color} dot={false} connectNulls />
-                        ))}
-                        {visibleData['fore_gnss'] && <ReferenceLine yAxisId="left" y={activeUnitThreshold} label={{ value: "부대 임계값", fill: "#4FD1C5" }} stroke="#4FD1C5" strokeDasharray="4 4" />}
-                        {isNowInRange && <ReferenceLine yAxisId="left" x={nowTimestamp} stroke="#fbbf24" strokeWidth={2} label={{ value: '현재', position: 'insideTop', fill: '#fbbf24' }} />}
-                        {recommendedRange && <ReferenceArea yAxisId="left" x1={recommendedRange.start} x2={recommendedRange.end} stroke="#4ade80" strokeOpacity={0.6} fill="#4ade80" fillOpacity={0.2} />}
-                    </LineChart>
-                  </ResponsiveContainer>)}
-            </div>
-            <div className="flex flex-col xl:flex-row justify-between items-center mt-4 pt-4 border-t border-gray-700 gap-4">
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-x-4 gap-y-2 w-full">
-                    {Object.entries(dataKeys).map(([key, {name}]) => (
-                        <label key={key} className="flex items-center gap-2 cursor-pointer text-sm text-gray-300">
-                            <input type="checkbox" checked={visibleData[key]} onChange={e => setVisibleData(v => ({...v, [key]: e.target.checked}))} className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-500 rounded" />
-                            {name}
-                        </label>
-                    ))}
-                </div>
-                {timeRange.start && <div className="flex items-center gap-2 w-full xl:w-auto pt-4 xl:pt-0 border-t border-gray-700 xl:border-none">
-                    <input type="datetime-local" value={toLocalISOString(new Date(timeRange.start))} onChange={e => setTimeRange(r => ({...r, start: new Date(e.target.value).getTime()}))} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-full"/>
-                    <span className="text-gray-400">-</span>
-                    <input type="datetime-local" value={toLocalISOString(new Date(timeRange.end))} onChange={e => setTimeRange(r => ({...r, end: new Date(e.target.value).getTime()}))} className="bg-gray-900 border border-gray-600 rounded p-1 text-sm w-full"/>
-                </div>}
-            </div>
-        </div>
-    );
-};
-const LiveMap = ({threshold, center}) => {
-    const koreaBounds = { minLat: 33.0, maxLat: 38.5, minLon: 125.0, maxLon: 130.0 };
-    const [aircrafts, setAircrafts] = useState(() => Array.from({ length: 20 }).map((_, i) => ({
-        id: i,
-        p0: [ koreaBounds.minLat + Math.random() * (koreaBounds.maxLat - koreaBounds.minLat), koreaBounds.minLon + Math.random() * (koreaBounds.maxLon - koreaBounds.minLon) ],
-        p1: [ koreaBounds.minLat + Math.random() * (koreaBounds.maxLat - koreaBounds.minLat), koreaBounds.minLon + Math.random() * (koreaBounds.maxLon - koreaBounds.minLon) ],
-        p2: [ koreaBounds.minLat + Math.random() * (koreaBounds.maxLat - koreaBounds.minLat), koreaBounds.minLon + Math.random() * (koreaBounds.maxLon - koreaBounds.minLon) ],
-        progress: Math.random(),
-        speed: 0.003 + Math.random() * 0.005,
-        error: 5 + Math.random() * 5
-    })));
-
-    useEffect(() => { const timer = setInterval(() => setAircrafts(prev => prev.map(ac => ({ ...ac, progress: (ac.progress + ac.speed) % 1, error: Math.max(3.0, ac.error + (Math.random() - 0.5) * 2) }))), 2000); return () => clearInterval(timer); }, []);
-
-    return (<div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700 h-96"><h2 className="text-lg font-semibold mb-4 text-white">실시간 항적 (한반도 전역)</h2><MapContainer key={center.lat + "-" + center.lon} center={[center.lat, center.lon]} zoom={9} style={{ height: "calc(100% - 40px)", width: "100%", borderRadius: "0.75rem", backgroundColor: "#333" }}> <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; CARTO' /> {aircrafts.map(ac => { let pos = getPointOnBezierCurve(ac.progress, ac.p0, ac.p1, ac.p2); return (<CircleMarker key={ac.id} center={pos} radius={6} pathOptions={{ color: getErrorColor(ac.error, threshold), fillColor: getErrorColor(ac.error, threshold), fillOpacity: 0.8 }}><LeafletTooltip>✈️ ID: {ac.id}<br />GNSS 오차: {ac.error.toFixed(2)}m</LeafletTooltip></CircleMarker>); })} </MapContainer> </div>);
-};
 
 // ####################################################################
 // ## MAIN APP COMPONENT
