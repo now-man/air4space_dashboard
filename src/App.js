@@ -135,7 +135,17 @@ const Header = ({ profile, setActiveView, activeView, onWeatherClick, apiKey }) 
 
     const renderTime = () => {
         const kst = currentTime.toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        return `${kst}`;
+        const utc = currentTime.toLocaleTimeString('en-GB', { timeZone: 'UTC', hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        
+        if (profile.timezone === 'BOTH') {
+            return (
+                <div className="text-right text-sm leading-tight">
+                    <div>{kst} <span className="text-gray-400">KST</span></div>
+                    <div>{utc} <span className="text-gray-400">UTC</span></div>
+                </div>
+            );
+        }
+        return profile.timezone === 'KST' ? `${kst} KST` : `${utc} UTC`;
     };
 
     return (
@@ -284,13 +294,13 @@ const LiveMap = ({threshold, center, isRaining, apiKey}) => {
         return () => clearInterval(timer);
     }, [isRaining]);
 
-    return (<div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700 h-96 flex flex-col"><h2 className="text-lg font-semibold mb-4 text-white">실시간 항적 및 기상</h2><div className="flex-grow relative"><MapContainer key={center.lat + "-" + center.lon} center={[center.lat, center.lon]} zoom={9} style={{ height: "100%", width: "100%", borderRadius: "0.75rem", backgroundColor: "#333" }}> <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; CARTO' /> 
+    return (<div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700 h-96 flex flex-col"><h2 className="text-lg font-semibold mb-4 text-white">실시간 항적 및 기상</h2><div className="flex-grow relative"><MapContainer key={center.lat + "-" + center.lon} center={[center.lat, center.lon]} zoom={9} style={{ height: "100%", width: "100%", borderRadius: "0.75rem", backgroundColor: "#333" }}> <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; CARTO' />
     {(showClouds || isRaining) && apiKey && (
         <>
             <TileLayer url={`https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid=${apiKey}`} attribution='&copy; OpenWeatherMap' zIndex={2} opacity={0.5}/>
             <TileLayer className="weather-tile-layer" url={`https://tile.openweathermap.org/map/precipitation_new/{z}/{x}/{y}.png?appid=${apiKey}`} attribution='&copy; OpenWeatherMap' zIndex={3} opacity={isRaining ? 0.9 : 0.6}/>
         </>
-    )} 
+    )}
     {aircrafts.map(ac => { let pos = getPointOnBezierCurve(ac.progress, ac.p0, ac.p1, ac.p2); return (<CircleMarker key={ac.id} center={pos} radius={6} pathOptions={{ color: getErrorColor(ac.error, threshold), fillColor: getErrorColor(ac.error, threshold), fillOpacity: 0.8 }}><LeafletTooltip>✈️ ID: {ac.id}<br />GNSS 오차: {formatNumber(ac.error)}m</LeafletTooltip></CircleMarker>); })} </MapContainer></div><div className="pt-2 mt-2 border-t border-gray-700"><label className="flex items-center gap-2 cursor-pointer text-sm text-gray-300"><input type="checkbox" checked={showClouds} onChange={e => setShowClouds(e.target.checked)} className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-500 rounded" />기상 오버레이 표시</label></div> </div>);
 };
 
@@ -478,7 +488,7 @@ const XAIAnalysisReport = ({ allForecastData, threshold }) => {
 
         let conclusion;
         let recommendation;
-        
+
         const formatConclusion = (status) => `24시간 내 최대 GNSS 오차는 <strong>${maxError.toFixed(2)}m</strong>로 예측됩니다. 이는 부대 임계값 ${threshold.toFixed(2)}m 대비 <strong class="${status === '위험' ? 'text-red-400' : status === '주의' ? 'text-yellow-400' : 'text-green-400'}">${status}</strong> 수준입니다.`;
 
         if (maxError > threshold) {
@@ -988,7 +998,7 @@ const SettingsView = ({ profiles, setProfiles, activeProfile, setActiveProfileId
             <div className="bg-gray-700/50 p-4 rounded-lg space-y-3"><h3 className="text-lg font-semibold text-white">위치 및 시간 설정</h3><div className="form-group"><label className="block text-sm font-medium text-gray-400 mb-2">위치 설정 방식</label><div className="flex flex-wrap gap-2">{[{id:'unit',label:'부대 위치',icon:Compass},{id:'manual',label:'직접 입력',icon:Edit3},{id:'current',label:'현재 위치',icon:MapPin}].map(m=>(<button key={m.id} onClick={()=>handleLocationMethodChange(m.id)} className={`flex items-center space-x-2 px-3 py-2 text-sm rounded-md ${localProfile.location.method === m.id ? 'bg-blue-600 text-white':'bg-gray-600'}`}>{React.createElement(m.icon,{size:16})}<span>{m.label}</span></button>))}</div></div>{localProfile.location.method === 'manual' && (<div className="flex flex-col md:flex-row gap-4 mt-2"><div className="w-full md:w-1/2"><label className="block text-sm font-medium text-gray-400 mb-2">위도</label><input type="number" step="any" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white" value={localProfile.location.coords.lat || ''} onChange={e => handleLocationChange('lat', e.target.value)}/></div><div className="w-full md:w-1/2"><label className="block text-sm font-medium text-gray-400 mb-2">경도</label><input type="number" step="any" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white" value={localProfile.location.coords.lon || ''} onChange={e => handleLocationChange('lon', e.target.value)}/></div></div>)}
             <div className="form-group"><label className="block text-sm font-medium text-gray-400 mb-2">표준 시간</label><div className="flex items-center space-x-2">{[{id:'KST',label:'KST'},{id:'UTC',label:'UTC'},{id:'BOTH',label:'KST/UTC'}].map(t=>(<button key={t.id} onClick={()=>handleProfileChange('timezone', t.id)} className={`px-3 py-2 text-sm rounded-md ${localProfile.timezone===t.id ? 'bg-blue-600 text-white':'bg-gray-600'}`}>{t.label}</button>))}</div></div></div>
             <div className="bg-gray-700/50 p-4 rounded-lg"><h3 className="text-lg font-semibold text-white mb-3">부대 종합 임계값</h3><div className="flex items-center space-x-2 cursor-pointer"><span className={`px-2 py-1 text-xs rounded-md ${localProfile.unitThresholdMode === 'manual' ? 'bg-blue-600':'bg-gray-600'}`} onClick={() => handleProfileChange('unitThresholdMode', 'manual')}>수동</span><span className={`px-2 py-1 text-xs rounded-md ${localProfile.unitThresholdMode === 'auto' ? 'bg-blue-600':'bg-gray-600'}`} onClick={() => handleProfileChange('unitThresholdMode', 'auto')}>자동</span></div>{localProfile.unitThresholdMode === 'manual' ? (<div className="flex items-center space-x-2 mt-2"><input type="range" min="1" max="30" step="0.5" value={localProfile.unitManualThreshold} onChange={e => handleProfileChange('unitManualThreshold', parseFloat(e.target.value))} className="w-full" /><span className="text-cyan-400 font-mono w-16 text-center">{formatNumber(localProfile.unitManualThreshold, 1)}m</span></div>) : (<div className="text-center bg-gray-800 p-2 rounded-md mt-2"><span className="text-gray-400">자동 계산된 임계값: </span><span className="font-bold text-white">{formatNumber(localProfile.unitAutoThreshold) ? `${formatNumber(localProfile.unitAutoThreshold)}m` : 'N/A'}</span></div>)}</div>
-            <div><h3 className="text-lg font-semibold text-white mb-3">주요 장비 설정</h3><div className="space-y-4">{localProfile.equipment.map(eq => (<div key={eq.id} className="bg-gray-700/50 p-4 rounded-lg space-y-4"><div className="flex justify-between items-center"><input type="text" value={eq.name} onChange={e => handleEquipmentChange(eq.id, 'name', e.target.value)} className="bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white" placeholder="장비명" /><button onClick={() => removeEquipment(eq.id)} className="text-red-400 hover:text-red-300 p-2"><Trash2 className="w-5 h-5" /></button></div><div className="flex items-center justify-between"><label className="flex items-center space-x-2 cursor-pointer"><input type="checkbox" checked={eq.usesGeoData} onChange={e => handleEquipmentChange(eq.id, 'usesGeoData', e.target.checked)} className="h-4 w-4 rounded bg-gray-900 border-gray-600 text-cyan-500 focus:ring-cyan-500" /><span>위치 정보 사용</span></label><div className="flex items-center space-x-2 cursor-pointer"><span className={`px-2 py-1 text-xs rounded-md ${eq.thresholdMode === 'manual' ? 'bg-blue-600':'bg-gray-600'}`} onClick={() => handleEquipmentChange(eq.id, 'thresholdMode', 'manual')}>수동</span><span className={`px-2 py-1 text-xs rounded-md ${eq.thresholdMode === 'auto' ? 'bg-blue-600':'bg-gray-600'}`} onClick={() => handleEquipmentChange(eq.id, 'thresholdMode', 'auto')}>자동</span></div></div><div>{eq.thresholdMode === 'manual' ? (<div className="flex items-center space-x-2"><input type="range" min="1" max="30" step="0.5" value={eq.manualThreshold} onChange={e => handleEquipmentChange(eq.id, 'manualThreshold', parseFloat(e.target.value))} className="w-full" /><span className="text-cyan-400 font-mono w-16 text-center">{formatNumber(eq.manualThreshold, 1)}m</span></div>) : (<div className="text-center bg-gray-800 p-2 rounded-md"><span className="text-gray-400">자동 임계값: </span><span className="font-bold text-white">{formatNumber(eq.autoThreshold) ? `${formatNumber(eq.autoThreshold)}m` : '데이터 부족'}</span></div>)}</div></div>))}</div><div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4 mt-4"><button onClick={addEquipment} className="w-full bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><Plus className="w-5 h-5" /><span>장비 추가</span></button><button className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><BrainCircuit size={20}/><span>자동 임계값 전체 재계산</span></button></div></div>
+            <div><h3 className="text-lg font-semibold text-white mb-3">주요 장비 설정</h3><div className="space-y-4">{localProfile.equipment.map(eq => (<div key={eq.id} className="bg-gray-700/50 p-4 rounded-lg space-y-4"><div className="flex justify-between items-center"><input type="text" value={eq.name} onChange={e => handleEquipmentChange(eq.id, 'name', e.target.value)} className="bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white" placeholder="장비명" /><button onClick={() => removeEquipment(eq.id)} className="text-red-400 hover:text-red-300 p-2"><Trash2 className="w-5 h-5" /></button></div><div className="flex items-center justify-between"><label className="flex items-center space-x-2 cursor-pointer"><input type="checkbox" checked={eq.usesGeoData} onChange={e => handleEquipmentChange(eq.id, 'usesGeoData', e.target.checked)} className="h-4 w-4 rounded bg-gray-900 border-gray-600 text-cyan-500 focus:ring-cyan-500" /><span>위치 정보 사용</span></label><div className="flex items-center space-x-2 cursor-pointer"><span className={`px-2 py-1 text-xs rounded-md ${eq.thresholdMode === 'manual' ? 'bg-blue-600':'bg-gray-600'}`} onClick={() => handleEquipmentChange(eq.id, 'thresholdMode', 'manual')}>수동</span><span className={`px-2 py-1 text-xs rounded-md ${eq.thresholdMode === 'auto' ? 'bg-blue-600':'bg-gray-600'}`} onClick={() => handleEquipmentChange(eq.id, 'thresholdMode', 'auto')}>자동</span></div></div><div>{eq.thresholdMode === 'manual' ? (<div className="flex items-center space-x-2"><input type="range" min="1" max="30" step="0.5" value={eq.manualThreshold} onChange={e => handleEquipmentChange(eq.id, 'manualThreshold', parseFloat(e.target.value))} className="w-full" /><span className="text-cyan-400 font-mono w-16 text-center">{formatNumber(eq.manualThreshold, 1)}m</span></div>) : (<div className="text-center bg-gray-800 p-2 rounded-md"><span className="text-gray-400">자동 임계값: </span><span className="font-bold text-white">{formatNumber(eq.autoThreshold) ? `${formatNumber(eq.autoThreshold)}m` : '데이터 부족'}</span></div>)}</div></div>))}</div><div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4 mt-4"><button onClick={addEquipment} className="w-full bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><Plus className="w-5 h-5" /><span>장비 추가</span></button><button onClick={onRecalculate} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><BrainCircuit size={20}/><span>자동 임계값 전체 재계산</span></button></div></div>
         </div><div className="mt-8 flex justify-end"><button onClick={handleSave} className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-6 rounded-lg flex items-center space-x-2"><Save className="w-5 h-5" /><span>저장</span></button></div></div>);
 };
 const FeedbackView = ({ equipmentList, onSubmit, goBack }) => {
@@ -1422,7 +1432,7 @@ export default function App() {
         id, name,
         location: { method: 'unit', coords: { lat, lon }, initialCoords: { lat, lon } },
         timezone: 'KST',
-        unitThresholdMode: 'manual', unitManualThreshold: 10.0,
+        unitThresholdMode: 'manual', unitManualThreshold: 20.0, unitAutoThreshold: null,
         equipment: [
             { id: Date.now() + 1, name: "JDAM", thresholdMode: 'manual', manualThreshold: 10.0, autoThreshold: null, usesGeoData: true },
             { id: Date.now() + 2, name: "정찰 드론 (A형)", thresholdMode: 'manual', manualThreshold: 15.0, autoThreshold: null, usesGeoData: true },
@@ -1539,7 +1549,7 @@ export default function App() {
             localStorage.setItem('missionLogs', JSON.stringify(missionLogs));
         } catch(e) {
             console.error("Failed to save missionLogs to localStorage:", e);
-          
+
         }
     }, [missionLogs]);
     useEffect(() => {
@@ -1557,6 +1567,48 @@ export default function App() {
     const updateTodo = (updatedTodo) => { setTodoList(prev => prev.map(todo => todo.id === updatedTodo.id ? updatedTodo : todo).sort((a,b) => a.time.localeCompare(b.time))); };
     const deleteTodo = (todoId) => { setTodoList(prev => prev.filter(todo => todo.id !== todoId)); };
 
+
+    const handleRecalculateThresholds = () => {
+        if (!missionLogs || missionLogs.length === 0) {
+            alert("분석할 피드백 데이터가 부족합니다.");
+            return;
+        }
+
+        const updatedProfiles = allProfiles.map(profile => {
+            const equipmentWithNewThresholds = profile.equipment.map(eq => {
+                const equipmentLogs = missionLogs.filter(log => log.equipment === eq.name);
+                const errRatesOnFailure = equipmentLogs
+                    .filter(l => l.successScore < 8 && l.gnssErrorData)
+                    .flatMap(l => l.gnssErrorData.map(d => d.error_rate));
+
+                if (errRatesOnFailure.length >= 10) { // 최소 10개의 실패/보통 데이터 포인트가 있을 때만 계산
+                    const sortedErrors = [...errRatesOnFailure].sort((a, b) => a - b);
+                    const p75Index = Math.floor(sortedErrors.length * 0.75);
+                    const newAutoThreshold = sortedErrors[p75Index];
+                    return { ...eq, autoThreshold: newAutoThreshold };
+                }
+                return { ...eq, autoThreshold: null }; // 데이터 부족 시 null로 초기화
+            });
+
+            const validAutoThresholds = equipmentWithNewThresholds
+                .map(eq => eq.autoThreshold)
+                .filter(th => th !== null);
+
+            const newUnitAutoThreshold = validAutoThresholds.length > 0
+                ? validAutoThresholds.reduce((sum, th) => sum + th, 0) / validAutoThresholds.length
+                : null;
+
+            return {
+                ...profile,
+                equipment: equipmentWithNewThresholds,
+                unitAutoThreshold: newUnitAutoThreshold,
+            };
+        });
+
+        setAllProfiles(updatedProfiles);
+        alert("자동 임계값 재계산이 완료되었습니다. 변경사항을 확인 후 저장해주세요.");
+    };
+
     const unitAutoThreshold = useMemo(() => activeProfile.equipment.length > 0 ? Math.min(...activeProfile.equipment.map(eq => eq.thresholdMode === 'auto' && eq.autoThreshold ? eq.autoThreshold : eq.manualThreshold)) : 10.0, [activeProfile.equipment]);
     const activeUnitThreshold = activeProfile.unitThresholdMode === 'auto' ? unitAutoThreshold : activeProfile.unitManualThreshold;
 
@@ -1573,9 +1625,9 @@ export default function App() {
     };
     const renderView = () => {
         switch (activeView) {
-            case 'settings': return <SettingsView profiles={allProfiles} setProfiles={setAllProfiles} activeProfile={activeProfile} setActiveProfileId={setActiveProfileId} goBack={() => setActiveView('dashboard')} createDefaultProfile={createDefaultProfile} />;
+            case 'settings': return <SettingsView profiles={allProfiles} setProfiles={setAllProfiles} activeProfile={activeProfile} setActiveProfileId={setActiveProfileId} goBack={() => setActiveView('dashboard')} createDefaultProfile={createDefaultProfile} onRecalculate={handleRecalculateThresholds} />;
             case 'feedback': return <FeedbackView equipmentList={activeProfile.equipment} onSubmit={handleFeedbackSubmit} goBack={() => setActiveView('dashboard')} />;
-            case 'dev': return <DeveloperTestView setLogs={setMissionLogs} setForecastData={setAllForecastData} allForecastData={allForecastData} goBack={() => setActiveView('dashboard')} setIsRaining={setIsRaining}/>;
+            case 'dev': return <DeveloperTestView setLogs={setMissionLogs} profile={activeProfile} setForecastData={setAllForecastData} allForecastData={allForecastData} goBack={() => setActiveView('dashboard')} setIsRaining={setIsRaining}/>;
             case 'analysis': return <AnalysisView logs={missionLogs} profile={activeProfile} activeUnitThreshold={activeUnitThreshold} allForecastData={allForecastData} />;
             default: return <DashboardView profile={activeProfile} allForecastData={allForecastData} forecastStatus={forecastStatus} logs={missionLogs} deleteLog={deleteLog} todoList={todoList} addTodo={addTodo} updateTodo={updateTodo} deleteTodo={deleteTodo} activeUnitThreshold={activeUnitThreshold} isRaining={isRaining} apiKey={OWM_API_KEY} />;
         }
