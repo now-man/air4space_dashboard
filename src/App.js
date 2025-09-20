@@ -1008,36 +1008,96 @@ const FeedbackView = ({ equipmentList, onSubmit, goBack }) => {
     const handleSubmit = (e) => { e.preventDefault(); if (!log.equipment || !log.startTime || !log.endTime) { alert("필수 항목을 모두 입력해주세요."); return; } onSubmit(log); };
     return (<div className="bg-gray-800 p-6 md:p-8 rounded-xl border border-gray-700 max-w-2xl mx-auto"><div className="flex items-center mb-6"><button onClick={goBack} className="mr-4 p-2 rounded-full hover:bg-gray-700"><ArrowLeft className="w-6 h-6" /></button><h2 className="text-xl md:text-2xl font-bold text-white">작전 피드백 입력</h2></div><form onSubmit={handleSubmit} className="space-y-6"><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-gray-400 mb-2">작전 시작 시간</label><input type="datetime-local" value={log.startTime} onChange={e => setLog({ ...log, startTime: e.target.value })} className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white" /></div><div><label className="block text-sm font-medium text-gray-400 mb-2">작전 종료 시간</label><input type="datetime-local" value={log.endTime} onChange={e => setLog({ ...log, endTime: e.target.value })} className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white" /></div></div><div><label className="block text-sm font-medium text-gray-400 mb-2">운용 장비</label><select value={log.equipment} onChange={e => setLog({ ...log, equipment: e.target.value })} className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white"><option value="" disabled>장비를 선택하세요</option>{equipmentList.map(eq => <option key={eq.id} value={eq.name}>{eq.name}</option>)}</select></div><div><label className="block text-sm font-medium text-gray-400 mb-2">GNSS 기반 작전 성공도</label><div className="flex items-center gap-4 bg-gray-900 p-3 rounded-lg"><input type="range" min="1" max="10" value={log.successScore} onChange={e => setLog({ ...log, successScore: parseInt(e.target.value)})} className="w-full h-2 bg-gray-700 rounded-lg" /><span className={`font-bold text-lg w-32 shrink-0 text-center ${getSuccessScoreInfo(log.successScore).color}`}>{log.successScore}점 ({getSuccessScoreInfo(log.successScore).label})</span></div></div><div><label className="block text-sm font-medium text-gray-400 mb-2">GNSS 오차 데이터 (선택)</label><label htmlFor="csv-upload" className="w-full bg-gray-700 hover:bg-gray-600 text-cyan-400 font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2 cursor-pointer"><UploadCloud className="w-5 h-5" /><span>{fileName || "CSV (date,error_rate[,lat,lon])"}</span></label><input id="csv-upload" type="file" accept=".csv" onChange={handleFileChange} className="hidden" /></div><div className="pt-4 flex justify-end"><button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg flex items-center space-x-2"><BotMessageSquare className="w-5 h-5" /><span>피드백 제출</span></button></div></form></div>);
 };
-const DeveloperTestView = ({ setLogs, setForecastData, allForecastData, goBack, setIsRaining }) => {
-    const generateMockLogs = () => { if (!window.confirm("기존 피드백을 삭제하고, 최근 100일간의 시연용 테스트 데이터를 대량 생성합니까?")) return; const newLogs = []; const today = new Date(); for (let i = 0; i < 100; i++) { const date = new Date(today); date.setDate(today.getDate() - i); const logCount = Math.floor(Math.random() * 5) + 5; for (let j = 0; j < logCount; j++) { const eq = { name: "JDAM", manualThreshold: 10, usesGeoData: true }; let successScore; let baseError; const outcomeRoll = Math.random(); if (outcomeRoll < 0.85) { successScore = Math.floor(8 + Math.random() * 3); baseError = 2 + Math.random() * (eq.manualThreshold * 0.5); } else if (outcomeRoll < 0.95) { successScore = Math.floor(4 + Math.random() * 4); baseError = eq.manualThreshold * 0.7 + Math.random() * (eq.manualThreshold * 0.3); } else { successScore = Math.floor(1 + Math.random() * 3); baseError = eq.manualThreshold * 1.1 + Math.random() * 5; } const startTime = new Date(date); startTime.setHours(Math.floor(Math.random() * 23), Math.floor(Math.random() * 60)); const endTime = new Date(startTime.getTime() + (30 + Math.floor(Math.random() * 90)) * 60000); const data = []; let curTime = new Date(startTime); const p0 = [36.7+Math.random()*0.5, 127.4+Math.random()*0.5]; const p1 = [36.7+Math.random()*0.5, 127.4+Math.random()*0.5]; const p2 = [36.7+Math.random()*0.5, 127.4+Math.random()*0.5]; let step = 0; while (curTime < endTime) { const err = Math.max(1.0, baseError + (Math.random() - 0.5) * 4); const entry = { date: curTime.toISOString(), error_rate: parseFloat(formatNumber(err))}; if (eq.usesGeoData) { const progress = step / ((endTime.getTime() - startTime.getTime()) / 60000 || 1); const pos = getPointOnBezierCurve(progress, p0, p1, p2); entry.lat = pos[0]; entry.lon = pos[1]; } data.push(entry); curTime.setMinutes(curTime.getMinutes() + 1); step++; } newLogs.push({ id: Date.now() + i * 100 + j, startTime: startTime.toISOString(), endTime: endTime.toISOString(), equipment: eq.name, successScore, gnssErrorData: data }); } } setLogs(newLogs.sort((a, b) => new Date(b.startTime) - new Date(a.startTime))); alert(`${newLogs.length}개의 테스트 피드백이 생성되었습니다.`); };
+const DeveloperTestView = ({ setLogs, profile, setForecastData, setAlertInfo, goBack }) => {
+    const generateMockLogs = () => {
+        if (!window.confirm("기존 피드백을 삭제하고, 최근 100일간의 시연용 테스트 데이터를 대량 생성합니까?")) return;
+        const newLogs = [];
+        const today = new Date();
+        for (let i = 0; i < 100; i++) {
+            const date = new Date(today);
+            date.setDate(today.getDate() - i);
+            const logCount = Math.floor(Math.random() * 5) + 5;
+            for (let j = 0; j < logCount; j++) {
+                // 현재 프로필의 장비 리스트에서 무작위로 선택
+                const eq = profile.equipment[Math.floor(Math.random() * profile.equipment.length)];
+                
+                let successScore;
+                let baseError;
+                const outcomeRoll = Math.random();
+                if (outcomeRoll < 0.85) {
+                    successScore = Math.floor(8 + Math.random() * 3);
+                    baseError = 2 + Math.random() * (eq.manualThreshold * 0.5);
+                } else if (outcomeRoll < 0.95) {
+                    successScore = Math.floor(4 + Math.random() * 4);
+                    baseError = eq.manualThreshold * 0.7 + Math.random() * (eq.manualThreshold * 0.3);
+                } else {
+                    successScore = Math.floor(1 + Math.random() * 3);
+                    baseError = eq.manualThreshold * 1.1 + Math.random() * 5;
+                }
+                const startTime = new Date(date);
+                startTime.setHours(Math.floor(Math.random() * 23), Math.floor(Math.random() * 60));
+                const endTime = new Date(startTime.getTime() + (30 + Math.floor(Math.random() * 90)) * 60000);
+                const data = [];
+                let curTime = new Date(startTime);
+                const p0 = [profile.location.coords.lat + (Math.random() - 0.5), profile.location.coords.lon + (Math.random() - 0.5)];
+                const p1 = [profile.location.coords.lat + (Math.random() - 0.5), profile.location.coords.lon + (Math.random() - 0.5)];
+                const p2 = [profile.location.coords.lat + (Math.random() - 0.5), profile.location.coords.lon + (Math.random() - 0.5)];
+                let step = 0;
+                while (curTime < endTime) {
+                    const err = Math.max(1.0, baseError + (Math.random() - 0.5) * 4);
+                    const entry = { date: curTime.toISOString(), error_rate: parseFloat(formatNumber(err)) };
+                    if (eq.usesGeoData) {
+                        const progress = step / ((endTime.getTime() - startTime.getTime()) / 60000 || 1);
+                        const pos = getPointOnBezierCurve(progress, p0, p1, p2);
+                        entry.lat = pos[0];
+                        entry.lon = pos[1];
+                    }
+                    data.push(entry);
+                    curTime.setMinutes(curTime.getMinutes() + 1);
+                    step++;
+                }
+                newLogs.push({ id: Date.now() + i * 100 + j, startTime: startTime.toISOString(), endTime: endTime.toISOString(), equipment: eq.name, successScore, gnssErrorData: data });
+            }
+        }
+        setLogs(newLogs.sort((a, b) => new Date(b.startTime) - new Date(a.startTime)));
+        alert(`${newLogs.length}개의 테스트 피드백이 생성되었습니다.`);
+    };
+    
     const clearLogs = () => { if (window.confirm("모든 피드백 데이터를 삭제하시겠습니까?")) { setLogs([]); alert("모든 피드백이 삭제되었습니다."); }};
     const resetAppState = () => { if (window.confirm("앱의 모든 로컬 데이터(프로필, 피드백 로그)를 삭제하고 초기 상태로 되돌리시겠습니까?")) { localStorage.clear(); alert("앱 상태가 초기화되었습니다. 페이지를 새로고침합니다."); window.location.reload(); }};
 
     const simulateSpaceWeather = (type) => {
         setForecastData(prevData => {
-            const newData = JSON.parse(JSON.stringify(allForecastData)); // Use original data for clean slate
+            const newData = JSON.parse(JSON.stringify(prevData));
             const now = new Date().getTime();
-            const targetTime = now + (3 + Math.random() * 5) * 3600 * 1000; // 3-8 hours from now
-
-            let alertMsg = '';
-            if(type === 'flare') {
-                for(let i = 0; i < newData.length; i++) {
+            const targetTime = now + (3 + Math.random() * 5) * 3600 * 1000;
+            
+            if (type === 'flare') {
+                for (let i = 0; i < newData.length; i++) {
                     if (newData[i].timestamp > targetTime && newData[i].timestamp < targetTime + 2 * 3600 * 1000) {
                         newData[i].xrsb = 5e-5;
                         newData[i].fore_gnss = Math.max(newData[i].fore_gnss, 15 + Math.random() * 5);
                     }
                 }
-                alertMsg = '강력한 태양 플레어 상황이 시뮬레이션 되었습니다.';
+                setAlertInfo({
+                    title: "태양 플레어 경보",
+                    message: `${formatDate(targetTime, 'time')}경 강력한 태양 플레어 발생으로 단파 통신 및 GNSS에 영향이 예상됩니다.`
+                });
             } else if (type === 'storm') {
-                 for(let i = 0; i < newData.length; i++) {
+                for (let i = 0; i < newData.length; i++) {
                     if (newData[i].timestamp > targetTime && newData[i].timestamp < targetTime + 12 * 3600 * 1000) {
-                        newData[i].kp = 6 + Math.random() * 2; // Kp 6-8
-                         newData[i].fore_gnss = Math.max(newData[i].fore_gnss, 18 + Math.random() * 8);
+                        newData[i].kp = 6 + Math.random() * 2;
+                        newData[i].fore_gnss = Math.max(newData[i].fore_gnss, 18 + Math.random() * 8);
                     }
                 }
-                alertMsg = '강력한 지자기 폭풍 상황이 시뮬레이션 되었습니다.';
+                 const stormPoint = newData.find(d => d.timestamp > targetTime && d.kp >= 6);
+                 if(stormPoint) {
+                    setAlertInfo({
+                        title: "지자기 폭풍 경보",
+                        message: `${formatDate(stormPoint.timestamp, 'time')}경 Kp 지수가 ${formatNumber(stormPoint.kp, 1)}까지 상승하여 GNSS 오차 급증이 예상됩니다.`
+                    });
+                }
             }
-            alert(alertMsg);
             return newData;
         });
     };
@@ -1047,10 +1107,9 @@ const DeveloperTestView = ({ setLogs, setForecastData, allForecastData, goBack, 
         <div className="space-y-6">
             <div>
                 <h3 className="text-lg font-semibold text-white mb-3">발표 시연용 시나리오</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                     <button onClick={() => simulateSpaceWeather('flare')} className="w-full bg-orange-600 hover:bg-orange-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><Sun size={20} /><span>태양 플레어</span></button>
-                     <button onClick={() => simulateSpaceWeather('storm')} className="w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><Wind size={20} /><span>지자기 폭풍</span></button>
-                     <button onClick={() => setIsRaining(prev => !prev)} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><Cloud size={20} /><span>강수 상황</span></button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <button onClick={() => simulateSpaceWeather('flare')} className="w-full bg-orange-600 hover:bg-orange-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><Sun size={20} /><span>태양 플레어</span></button>
+                    <button onClick={() => simulateSpaceWeather('storm')} className="w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><Wind size={20} /><span>지자기 폭풍</span></button>
                 </div>
             </div>
             <div>
@@ -1505,32 +1564,6 @@ export default function App() {
     }, []);
 
     useEffect(() => {
-        if (!allForecastData || allForecastData.length === 0 || alertInfo) return;
-
-        const now = new Date().getTime();
-        const next24h = now + 24 * 3600 * 1000;
-        const relevantData = allForecastData.filter(d => d.timestamp >= now && d.timestamp <= next24h);
-
-        const stormPoint = relevantData.find(d => d.kp >= 6);
-        if (stormPoint) {
-            setAlertInfo({
-                title: "지자기 폭풍 경보",
-                message: `${formatDate(stormPoint.timestamp, 'time')}경 Kp 지수가 ${formatNumber(stormPoint.kp, 1)}까지 상승하여 GNSS 오차 급증이 예상됩니다.`
-            });
-            return;
-        }
-
-        const flarePoint = relevantData.find(d => d.xrsb > 1e-5);
-        if (flarePoint) {
-             setAlertInfo({
-                title: "태양 플레어 경보",
-                message: `${formatDate(flarePoint.timestamp, 'time')}경 강력한 태양 플레어 발생으로 단파 통신 및 GNSS에 영향이 예상됩니다.`
-            });
-        }
-    }, [allForecastData]);
-
-
-    useEffect(() => {
         try {
             localStorage.setItem('allProfiles', JSON.stringify(allProfiles));
         } catch (e) {
@@ -1627,7 +1660,13 @@ export default function App() {
         switch (activeView) {
             case 'settings': return <SettingsView profiles={allProfiles} setProfiles={setAllProfiles} activeProfile={activeProfile} setActiveProfileId={setActiveProfileId} goBack={() => setActiveView('dashboard')} createDefaultProfile={createDefaultProfile} onRecalculate={handleRecalculateThresholds} />;
             case 'feedback': return <FeedbackView equipmentList={activeProfile.equipment} onSubmit={handleFeedbackSubmit} goBack={() => setActiveView('dashboard')} />;
-            case 'dev': return <DeveloperTestView setLogs={setMissionLogs} profile={activeProfile} setForecastData={setAllForecastData} allForecastData={allForecastData} goBack={() => setActiveView('dashboard')} setIsRaining={setIsRaining}/>;
+            case 'dev': return <DeveloperTestView 
+                setLogs={setMissionLogs} 
+                profile={activeProfile} 
+                setForecastData={setAllForecastData} 
+                setAlertInfo={setAlertInfo}
+                goBack={() => setActiveView('dashboard')} 
+            />;
             case 'analysis': return <AnalysisView logs={missionLogs} profile={activeProfile} activeUnitThreshold={activeUnitThreshold} allForecastData={allForecastData} />;
             default: return <DashboardView profile={activeProfile} allForecastData={allForecastData} forecastStatus={forecastStatus} logs={missionLogs} deleteLog={deleteLog} todoList={todoList} addTodo={addTodo} updateTodo={updateTodo} deleteTodo={deleteTodo} activeUnitThreshold={activeUnitThreshold} isRaining={isRaining} apiKey={OWM_API_KEY} />;
         }
