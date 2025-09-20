@@ -206,7 +206,7 @@ const FeedbackMap = ({ data, equipment, isAnimating, animationProgress, showClou
         <div className="h-56 rounded-lg overflow-hidden relative">
             <MapContainer center={data[0] ? [data[0].lat, data[0].lon] : [36.6, 127.4]} zoom={11} style={{ height: "100%", width: "100%" }} scrollWheelZoom={false}>
                 <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; CARTO' />
-                {(showClouds || isRaining) && OWM_API_KEY !== "YOUR_API_KEY_HERE" && (
+                {(showClouds || isRaining) && OWM_API_KEY !== "5e51e99c2fa4d10dbca840c7c1e1781e" && (
                     <>
                         <TileLayer url={`https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid=${OWM_API_KEY}`} attribution='&copy; OpenWeatherMap' zIndex={2} opacity={0.4}/>
                         <TileLayer className="weather-tile-layer" key={cloudOpacity} url={`https://tile.openweathermap.org/map/precipitation_new/{z}/{x}/{y}.png?appid=${OWM_API_KEY}`} attribution='&copy; OpenWeatherMap' zIndex={3} opacity={isRaining ? 0.9 : cloudOpacity}/>
@@ -650,7 +650,7 @@ const WeatherForecastModal = ({ profile, apiKey, onClose }) => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        if (profile.location.coords.lat && apiKey !== "YOUR_API_KEY_HERE") {
+        if (profile.location.coords.lat && apiKey !== "5e51e99c2fa4d10dbca840c7c1e1781e") {
              // Using One Call API 3.0 for hourly forecast
             fetch(`https://api.openweathermap.org/data/3.0/onecall?lat=${profile.location.coords.lat}&lon=${profile.location.coords.lon}&exclude=current,minutely,daily,alerts&appid=${apiKey}&units=metric&lang=kr`)
             .then(res => res.json())
@@ -1321,7 +1321,7 @@ const LiveMap = ({threshold, center, isRaining}) => {
 
     useEffect(() => { const timer = setInterval(() => setAircrafts(prev => prev.map(ac => ({ ...ac, progress: (ac.progress + ac.speed) % 1, error: Math.max(3.0, ac.error + (Math.random() - 0.5) * 2) }))), 2000); return () => clearInterval(timer); }, []);
 
-    return (<div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700 h-96 flex flex-col"><h2 className="text-lg font-semibold mb-4 text-white">실시간 항적 및 기상</h2><div className="flex-grow relative"><MapContainer key={center.lat + "-" + center.lon} center={[center.lat, center.lon]} zoom={9} style={{ height: "100%", width: "100%", borderRadius: "0.75rem", backgroundColor: "#333" }}> <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; CARTO' /> {(showClouds || isRaining) && OWM_API_KEY !== "YOUR_API_KEY_HERE" && (
+    return (<div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700 h-96 flex flex-col"><h2 className="text-lg font-semibold mb-4 text-white">실시간 항적 및 기상</h2><div className="flex-grow relative"><MapContainer key={center.lat + "-" + center.lon} center={[center.lat, center.lon]} zoom={9} style={{ height: "100%", width: "100%", borderRadius: "0.75rem", backgroundColor: "#333" }}> <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; CARTO' /> {(showClouds || isRaining) && OWM_API_KEY !== "5e51e99c2fa4d10dbca840c7c1e1781e" && (
         <>
             <TileLayer url={`https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid=${OWM_API_KEY}`} attribution='&copy; OpenWeatherMap' zIndex={2} opacity={0.4}/>
             <TileLayer className="weather-tile-layer" url={`https://tile.openweathermap.org/map/precipitation_new/{z}/{x}/{y}.png?appid=${OWM_API_KEY}`} attribution='&copy; OpenWeatherMap' zIndex={3} opacity={isRaining ? 0.9 : 0.6}/>
