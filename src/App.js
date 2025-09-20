@@ -928,7 +928,7 @@ const SpaceWeatherAlert = ({ alertInfo, onClose }) => {
 
 
 // --- Main View Components ---
-const SettingsView = ({ profiles, setProfiles, activeProfile, setActiveProfileId, goBack, createDefaultProfile }) => {
+const SettingsView = ({ profiles, setProfiles, activeProfile, setActiveProfileId, goBack, createDefaultProfile, onRecalculate  }) => {
     const [localProfile, setLocalProfile] = useState(JSON.parse(JSON.stringify(activeProfile)));
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingProfile, setEditingProfile] = useState(null);
