@@ -1140,6 +1140,7 @@ const DashboardView = ({ profile, allForecastData, forecastStatus, logs, deleteL
 const Header = ({ profile, setActiveView, activeView, onWeatherClick }) => {
     const [currentTime, setCurrentTime] = useState(new Date());
     const [weather, setWeather] = useState(null);
+    const weatherButtonRef = useRef(null);
     // ❗ OpenWeatherMap에서 발급받은 무료 API 키를 여기에 입력하세요.
     const OWM_API_KEY = "5e51e99c2fa4d10dbca840c7c1e1781e";
 
@@ -1149,22 +1150,28 @@ const Header = ({ profile, setActiveView, activeView, onWeatherClick }) => {
     }, []);
 
     useEffect(() => {
-        if(profile.location.coords.lat && OWM_API_KEY !== "YOUR_API_KEY_HERE") {
-            fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${profile.location.coords.lat}&lon=${profile.location.coords.lon}&appid=${OWM_API_KEY}&units=metric&lang=kr`)
-            .then(res => res.json())
-            .then(data => {
-                if(data.cod === 200) {
-                    setWeather(data);
-                }
-            }).catch(console.error);
-        } else {
-             const mockWeather = {
-                main: { temp: 23.5 },
-                weather: [{ icon: '01d', description: '맑음' }]
-            };
-            setWeather(mockWeather);
-        }
-    }, [profile.location.coords.lat, profile.location.coords.lon]);
+        const fetchWeather = () => {
+            if (profile.location.coords.lat && apiKey) {
+                fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${profile.location.coords.lat}&lon=${profile.location.coords.lon}&appid=${apiKey}&units=metric&lang=kr`)
+                .then(res => {
+                    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+                    return res.json();
+                })
+                .then(data => {
+                    if (data.cod === 200) {
+                        setWeather(data);
+                    } else {
+                        console.error("Weather API Error:", data.message);
+                    }
+                }).catch(err => console.error("Fetch weather failed:", err));
+            }
+        };
+
+        fetchWeather();
+        const weatherInterval = setInterval(fetchWeather, 600000); // 10분마다 날씨 정보 갱신
+        return () => clearInterval(weatherInterval);
+
+    }, [profile.location.coords.lat, profile.location.coords.lon, apiKey]);
 
     const renderTime = () => {
         const kst = currentTime.toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -1189,14 +1196,14 @@ const Header = ({ profile, setActiveView, activeView, onWeatherClick }) => {
                 <button onClick={() => setActiveView('analysis')} className={`px-4 py-2 text-sm font-semibold rounded-lg flex items-center gap-2 ${activeView === 'analysis' ? 'bg-cyan-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}><BarChart3 size={16}/> 피드백 및 분석</button>
             </div>
             <div className="flex items-center space-x-2 md:space-x-4">
-                {weather && (
-                    <button onClick={onWeatherClick} className="hidden sm:flex items-center gap-2 text-sm bg-gray-700/50 px-3 py-1.5 rounded-lg hover:bg-gray-700 transition-colors">
+                {weather ? (
+                    <button ref={weatherButtonRef} onClick={() => onWeatherClick(weatherButtonRef.current.getBoundingClientRect())} className="hidden sm:flex items-center gap-2 text-sm bg-gray-700/50 px-3 py-1.5 rounded-lg hover:bg-gray-700 transition-colors">
                         <img src={`https://openweathermap.org/img/wn/${weather.weather[0].icon}.png`} alt={weather.weather[0].description} className="w-7 h-7" />
                         <span className="font-semibold text-white">{formatNumber(weather.main.temp, 1)}°C</span>
                         <span className="text-gray-300">{weather.weather[0].description}</span>
                     </button>
-                )}
-                <div className="hidden md:block text-sm font-semibold text-gray-300 font-mono"> {renderTime()} </div>
+                ) : <div className="hidden sm:flex items-center gap-2 text-sm bg-gray-700/50 px-3 py-1.5 rounded-lg"><Cloud size={16}/>날씨 로딩중..</div>}
+                <div className="hidden md:block text-lg font-sans font-semibold text-gray-300"> {renderTime()} </div>
                 <div className="flex items-center space-x-2">
                     <button onClick={() => setActiveView('feedback')} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold p-2 rounded-lg flex items-center transition-colors" title="피드백 입력"><Plus className="w-5 h-5" /></button>
                     <button onClick={() => setActiveView('settings')} className="bg-gray-700 hover:bg-gray-600 text-white font-semibold p-2 rounded-lg flex items-center transition-colors" title="설정"><Settings className="w-5 h-5" /></button>
@@ -1322,14 +1329,88 @@ const LiveMap = ({threshold, center, isRaining}) => {
     )} {aircrafts.map(ac => { let pos = getPointOnBezierCurve(ac.progress, ac.p0, ac.p1, ac.p2); return (<CircleMarker key={ac.id} center={pos} radius={6} pathOptions={{ color: getErrorColor(ac.error, threshold), fillColor: getErrorColor(ac.error, threshold), fillOpacity: 0.8 }}><LeafletTooltip>✈️ ID: {ac.id}<br />GNSS 오차: {formatNumber(ac.error)}m</LeafletTooltip></CircleMarker>); })} </MapContainer></div><div className="pt-2 mt-2 border-t border-gray-700"><label className="flex items-center gap-2 cursor-pointer text-sm text-gray-300"><input type="checkbox" checked={showClouds} onChange={e => setShowClouds(e.target.checked)} className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-500 rounded" />기상 오버레이 표시</label></div> </div>);
 };
 
+const WeatherForecastPopover = ({ profile, apiKey, onClose, position }) => {
+    const [forecast, setForecast] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const popoverRef = useRef(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (popoverRef.current && !popoverRef.current.contains(event.target)) {
+                onClose();
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, [onClose]);
+
+    useEffect(() => {
+        if (profile.location.coords.lat && apiKey) {
+            // 무료 3시간 단위 5일 예보 API 사용
+            fetch(`https://api.openweathermap.org/data/2.5/forecast?lat=${profile.location.coords.lat}&lon=${profile.location.coords.lon}&appid=${apiKey}&units=metric&lang=kr`)
+            .then(res => res.json())
+            .then(data => {
+                if (data && data.list) {
+                    setForecast(data.list.slice(0, 8)); // 다음 24시간 데이터
+                } else {
+                    console.error("Weather forecast data error:", data);
+                }
+                setLoading(false);
+            }).catch(err => {
+                console.error("Weather API fetch error:", err);
+                setLoading(false);
+            });
+        } else {
+            setLoading(false);
+        }
+    }, [profile.location.coords, apiKey]);
+
+    if (!position) return null;
+
+    const formatDateForPopover = (dateString) => {
+        const date = new Date(dateString);
+        const hour = String(date.getHours()).padStart(2, '0');
+        return `${hour}:00`;
+    };
+
+    return createPortal(
+        <div ref={popoverRef} className="absolute z-50 bg-gray-800 border border-gray-600 rounded-xl p-4 w-full max-w-lg shadow-lg" style={{ top: `${position.bottom + 8}px`, right: `${window.innerWidth - position.right}px`}}>
+            <div className="flex justify-between items-center mb-3">
+                <h2 className="text-lg font-bold text-white">시간대별 예보 ({profile.name})</h2>
+                <button onClick={onClose} className="p-1 rounded-full hover:bg-gray-700"><X size={20}/></button>
+            </div>
+            {loading ? <p className="text-gray-300">로딩 중...</p> : !forecast ? <p className="text-red-400">예보를 불러올 수 없습니다.</p> :
+            <div className="space-y-2 max-h-80 overflow-y-auto">
+                {forecast.map(hour => (
+                    <div key={hour.dt} className="grid grid-cols-4 items-center text-center p-2 bg-gray-900/50 rounded-md text-white text-sm">
+                        <span className="font-semibold">{formatDateForPopover(hour.dt * 1000)}</span>
+                        <div className="flex items-center justify-center gap-1">
+                            <img src={`https://openweathermap.org/img/wn/${hour.weather[0].icon}.png`} alt={hour.weather[0].description} className="w-8 h-8"/>
+                            <span className="w-24 text-xs">{hour.weather[0].description}</span>
+                        </div>
+                        <span className="flex items-center justify-center gap-1"><Thermometer size={16} className="text-red-400"/> {formatNumber(hour.main.temp, 1)}°C</span>
+                        <span className="flex items-center justify-center gap-1"><Droplets size={16} className="text-blue-400"/> {Math.round(hour.pop * 100)}%</span>
+                    </div>
+                ))}
+            </div>
+            }
+        </div>,
+        document.body
+    );
+};
+
 // ####################################################################
 // ## MAIN APP COMPONENT
 // ####################################################################
 export default function App() {
     const [activeView, setActiveView] = useState('dashboard');
     const [isRaining, setIsRaining] = useState(false);
-    const [isWeatherModalOpen, setIsWeatherModalOpen] = useState(false);
+    const [isWeatherPopoverOpen, setIsWeatherPopoverOpen] = useState(false);
+    const [popoverPosition, setPopoverPosition] = useState(null);
     const [alertInfo, setAlertInfo] = useState(null);
+
+    // ❗ OpenWeatherMap에서 발급받은 무료 API 키
+    const OWM_API_KEY = "5e51e99c2fa4d10dbca840c7c1e1781e";
 
     const createDefaultProfile = (id, name, lat, lon) => ({
         id, name,
@@ -1476,22 +1557,29 @@ export default function App() {
     if (!activeProfile) {
         return <div className="bg-gray-900 text-gray-200 min-h-screen flex items-center justify-center">프로필 정보를 불러오는 데 실패했습니다. 앱을 초기화하거나 다시 시도해주세요.</div>
     }
+    const handleWeatherClick = (position) => {
+        setPopoverPosition(position);
+        setIsWeatherPopoverOpen(prev => !prev); // 토글 방식
+    };
 
+    const handleClosePopover = () => {
+        setIsWeatherPopoverOpen(false);
+    };
     const renderView = () => {
         switch (activeView) {
             case 'settings': return <SettingsView profiles={allProfiles} setProfiles={setAllProfiles} activeProfile={activeProfile} setActiveProfileId={setActiveProfileId} goBack={() => setActiveView('dashboard')} createDefaultProfile={createDefaultProfile} />;
             case 'feedback': return <FeedbackView equipmentList={activeProfile.equipment} onSubmit={handleFeedbackSubmit} goBack={() => setActiveView('dashboard')} />;
             case 'dev': return <DeveloperTestView setLogs={setMissionLogs} setForecastData={setAllForecastData} allForecastData={allForecastData} goBack={() => setActiveView('dashboard')} setIsRaining={setIsRaining}/>;
             case 'analysis': return <AnalysisView logs={missionLogs} profile={activeProfile} activeUnitThreshold={activeUnitThreshold} allForecastData={allForecastData} />;
-            default: return <DashboardView profile={activeProfile} allForecastData={allForecastData} forecastStatus={forecastStatus} logs={missionLogs} deleteLog={deleteLog} todoList={todoList} addTodo={addTodo} updateTodo={updateTodo} deleteTodo={deleteTodo} activeUnitThreshold={activeUnitThreshold} isRaining={isRaining} />;
+            default: return <DashboardView profile={activeProfile} allForecastData={allForecastData} forecastStatus={forecastStatus} logs={missionLogs} deleteLog={deleteLog} todoList={todoList} addTodo={addTodo} updateTodo={updateTodo} deleteTodo={deleteTodo} activeUnitThreshold={activeUnitThreshold} isRaining={isRaining} apiKey={OWM_API_KEY} />;
         }
     };
 
     return (
         <div className="bg-gray-900 text-gray-200 min-h-screen font-sans">
-            <Header profile={activeProfile} setActiveView={setActiveView} activeView={activeView} onWeatherClick={() => setIsWeatherModalOpen(true)}/>
+            <Header profile={activeProfile} setActiveView={setActiveView} activeView={activeView} onWeatherClick={handleWeatherClick} apiKey={OWM_API_KEY}/>
             <SpaceWeatherAlert alertInfo={alertInfo} onClose={() => setAlertInfo(null)}/>
-            {isWeatherModalOpen && <WeatherForecastModal profile={activeProfile} apiKey={"5e51e99c2fa4d10dbca840c7c1e1781e"} onClose={() => setIsWeatherModalOpen(false)}/>}
+            {isWeatherPopoverOpen && <WeatherForecastPopover profile={activeProfile} apiKey={OWM_API_KEY} onClose={handleClosePopover} position={popoverPosition}/>}
             <div className="p-4 md:p-6 lg:p-8"><main>{renderView()}</main></div>
         </div>
     );
