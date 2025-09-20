@@ -267,30 +267,32 @@ const XAIAnalysisReport = ({ allForecastData, threshold }) => {
         const now = new Date().getTime();
         const next24h = now + 24 * 3600 * 1000;
         const relevantData = allForecastData.filter(d => d.timestamp >= now && d.timestamp <= next24h);
-        if (relevantData.length === 0) return { maxError: 0, factors: [], advisory: "예측 데이터가 없습니다." };
+        if (relevantData.length === 0) return { conclusion: "예측 데이터가 없습니다.", recommendation: "", factors: [] };
 
         const maxErrorPoint = relevantData.reduce((max, p) => p.fore_gnss > max.fore_gnss ? p : max, relevantData[0]);
         const maxError = maxErrorPoint.fore_gnss;
 
         const factors = [];
         // Kp Index (Geomagnetic Storm)
-        if (maxErrorPoint.kp10 >= 5) factors.push({ severity: "높은", name: "Kp 지수", value: maxErrorPoint.kp10.toFixed(1), cause: "지자기 폭풍", icon: <Wind size={16} className="text-yellow-400"/> });
+        if (maxErrorPoint.kp10 >= 5) factors.push({ severity: "높은", name: "Kp 지수", value: (maxErrorPoint.kp10 / 10).toFixed(1), cause: "지자기 폭풍", icon: <Wind size={16} className="text-yellow-400"/> });
         // X-ray Flux (Solar Flare)
         if (maxErrorPoint.xrsb > 1e-5) factors.push({ severity: "높은", name: "X선 플럭스", value: maxErrorPoint.xrsb.toExponential(1), cause: "태양 플레어", icon: <Sun size={16} className="text-red-400"/> });
         // TEC (Total Electron Content)
         if (maxErrorPoint.tec_value > 50) factors.push({ severity: "높은", name: "총 전자 함유량(TEC)", value: maxErrorPoint.tec_value.toFixed(1), cause: "전리층 불안정", icon: <Zap size={16} className="text-blue-400"/>});
 
-        let conclusion = `24시간 내 최대 GNSS 오차는 **${maxError.toFixed(2)}m**로 예측됩니다. 이는 부대 임계값 ${threshold.toFixed(2)}m 대비 `;
+        let conclusion;
         let recommendation;
+        
+        const formatConclusion = (status) => `24시간 내 최대 GNSS 오차는 <strong>${maxError.toFixed(2)}m</strong>로 예측됩니다. 이는 부대 임계값 ${threshold.toFixed(2)}m 대비 <strong class="${status === '위험' ? 'text-red-400' : status === '주의' ? 'text-yellow-400' : 'text-green-400'}">${status}</strong> 수준입니다.`;
 
         if (maxError > threshold) {
-            conclusion += "**위험** 수준입니다.";
+            conclusion = formatConclusion("위험");
             recommendation = "정밀 타격 및 GNSS 의존도가 높은 임무 수행 시 각별한 주의가 필요하며, 대체 항법 수단 사용을 적극 고려해야 합니다.";
         } else if (maxError > threshold * 0.7) {
-            conclusion += "**주의** 수준입니다.";
+            conclusion = formatConclusion("주의");
             recommendation = "GNSS 민감 장비 운용 시 간헐적 오차 증가에 대비하고, 대체 항법 수단을 숙지하십시오.";
         } else {
-            conclusion += "**안정** 수준입니다.";
+            conclusion = formatConclusion("안정");
             recommendation = "모든 임무를 정상적으로 수행할 수 있습니다.";
         }
 
@@ -301,7 +303,6 @@ const XAIAnalysisReport = ({ allForecastData, threshold }) => {
             conclusion += ` 복합적인 우주기상 요인의 영향으로 보입니다.`
         }
 
-
         return { conclusion, recommendation, factors };
 
     }, [allForecastData, threshold]);
@@ -311,17 +312,17 @@ const XAIAnalysisReport = ({ allForecastData, threshold }) => {
     return (
         <div className="bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-700">
             <h2 className="text-lg font-semibold mb-4 text-white flex items-center"><BrainCircuit size={20} className="mr-2 text-cyan-300" />XAI 기반 상황 분석 보고</h2>
-            <div className="space-y-4 text-sm">
+            <div className="space-y-3">
                 <div>
-                    <p className="font-semibold text-gray-300">종합 분석</p>
-                    <p className="text-gray-400" dangerouslySetInnerHTML={{ __html: analysis.conclusion }}></p>
+                    <p className="font-semibold text-gray-300 text-sm mb-1">종합 분석</p>
+                    <p className="text-gray-400 text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: analysis.conclusion }}></p>
                 </div>
                 {analysis.factors.length > 0 && (
                     <div>
-                        <p className="font-semibold text-gray-300">주요 영향 요인</p>
-                        <ul className="list-none space-y-1 mt-1">
+                        <p className="font-semibold text-gray-300 text-sm mb-1">주요 영향 요인</p>
+                        <ul className="list-none space-y-1">
                             {analysis.factors.map(f => (
-                                <li key={f.name} className="flex items-center gap-2 p-2 bg-gray-900/50 rounded-md">
+                                <li key={f.name} className="flex items-center gap-2 p-2 bg-gray-900/50 rounded-md text-sm">
                                     {f.icon}
                                     <span className="font-semibold">{f.cause}</span>
                                     <span className="text-gray-400">({f.name}: {f.value})</span>
@@ -331,8 +332,8 @@ const XAIAnalysisReport = ({ allForecastData, threshold }) => {
                     </div>
                 )}
                 <div>
-                    <p className="font-semibold text-gray-300">권고 사항</p>
-                    <p className="text-gray-400">{analysis.recommendation}</p>
+                    <p className="font-semibold text-gray-300 text-sm mb-1">권고 사항</p>
+                    <p className="text-gray-400 text-sm leading-relaxed">{analysis.recommendation}</p>
                 </div>
             </div>
         </div>
