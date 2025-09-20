@@ -416,7 +416,7 @@ const FeedbackMap = ({ data, equipment, isAnimating, animationProgress, showClou
 };
 const FeedbackChart = ({ data, equipment }) => { const activeThreshold = equipment.thresholdMode === 'auto' && equipment.autoThreshold ? equipment.autoThreshold : equipment.manualThreshold; const segments = useMemo(() => { const segs = []; let cur = null; data.forEach(d => { if (d.error_rate > activeThreshold) { if (!cur) cur = { x1: d.date, x2: d.date }; else cur.x2 = d.date; } else { if (cur) { segs.push(cur); cur = null; } } }); if (cur) segs.push(cur); return segs; }, [data, activeThreshold]); return (<div className="mt-4 h-40"><ResponsiveContainer width="100%" height="100%"><LineChart data={data} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}> <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" /><XAxis dataKey="date" stroke="#A0AEC0" tick={{ fontSize: 10 }} tickFormatter={(tick) => formatDate(tick, 'time')} /> <YAxis stroke="#A0AEC0" tick={{ fontSize: 10 }} domain={[0, 'dataMax + 2']} tickFormatter={(tick) => formatNumber(tick, 1)} /> <Tooltip contentStyle={{ backgroundColor: '#1A202C' }} labelFormatter={(label) => formatDate(label)} formatter={(value) => formatNumber(value)} /> <Line type="monotone" dataKey="error_rate" name="GNSS 오차(m)" stroke="#F56565" strokeWidth={2} dot={false} /> {segments.map((seg, i) => <ReferenceArea key={i} x1={seg.x1} x2={seg.x2} stroke="none" fill="#f56565" fillOpacity={0.3} />)} <ReferenceLine y={activeThreshold} label={{ value: "임계값", position: 'insideTopLeft', fill: '#4FD1C5', fontSize: 10 }} stroke="#4FD1C5" strokeDasharray="3 3" /> </LineChart></ResponsiveContainer></div>); };
 
-const ExpandedLogView = ({ log, profile, animatingLogId, animationProgress, handlePlayAnimation, isRaining }) => {
+const ExpandedLogView = ({ log, profile, animatingLogId, animationProgress, handlePlayAnimation, isRaining, apiKey  }) => {
     const [showClouds, setShowClouds] = useState(true);
     const equipment = profile.equipment.find(e => e.name === log.equipment);
     const hasGeoData = log.gnssErrorData && log.gnssErrorData[0]?.lat !== undefined;
@@ -434,6 +434,7 @@ const ExpandedLogView = ({ log, profile, animatingLogId, animationProgress, hand
                             animationProgress={animationProgress}
                             showClouds={showClouds}
                             isRaining={isRaining}
+                            apiKey={apiKey}
                         />
                         <button onClick={(e) => handlePlayAnimation(log.id, e)} className="absolute top-2 right-2 z-[1000] bg-sky-500 text-white p-2 rounded-full hover:bg-sky-400 shadow-lg transition-transform hover:scale-110">
                             <PlayCircle size={20} className={animatingLogId === log.id ? 'animate-pulse' : ''} />
@@ -1259,7 +1260,7 @@ const AnalysisView = ({ logs, profile, activeUnitThreshold, allForecastData }) =
         </div>
     );
 };
-const DashboardView = ({ profile, allForecastData, forecastStatus, logs, deleteLog, todoList, addTodo, updateTodo, deleteTodo, activeUnitThreshold, isRaining }) => {
+const DashboardView = ({ profile, allForecastData, forecastStatus, logs, deleteLog, todoList, addTodo, updateTodo, deleteTodo, activeUnitThreshold, isRaining, apiKey  }) => {
     const [selectedDate, setSelectedDate] = useState(null);
     const [expandedLogId, setExpandedLogId] = useState(null);
     const [animatingLogId, setAnimatingLogId] = useState(null);
@@ -1313,6 +1314,7 @@ const DashboardView = ({ profile, allForecastData, forecastStatus, logs, deleteL
                                     animationProgress={animationProgress}
                                     handlePlayAnimation={handlePlayAnimation}
                                     isRaining={isRaining}
+                                    apiKey={apiKey}
                                 />
                             )}
                         </div>
@@ -1327,7 +1329,7 @@ const DashboardView = ({ profile, allForecastData, forecastStatus, logs, deleteL
                 </div>
                 <XAIAnalysisReport allForecastData={allForecastData} threshold={activeUnitThreshold} />
                 <TodoList todoList={todoList} addTodo={addTodo} updateTodo={updateTodo} deleteTodo={deleteTodo} />
-                <LiveMap threshold={activeUnitThreshold} center={profile.location.coords} isRaining={isRaining}/>
+                <LiveMap threshold={activeUnitThreshold} center={profile.location.coords} isRaining={isRaining} apiKey={apiKey}/>
             </div>
         </div>
     </>);
