@@ -928,12 +928,20 @@ const SpaceWeatherAlert = ({ alertInfo, onClose }) => {
 
 
 // --- Main View Components ---
-const SettingsView = ({ profiles, setProfiles, activeProfile, setActiveProfileId, goBack, createDefaultProfile, onRecalculate  }) => {
+const SettingsView = ({ profiles, setProfiles, activeProfile, setActiveProfileId, goBack, createDefaultProfile, onRecalculate }) => {
     const [localProfile, setLocalProfile] = useState(JSON.parse(JSON.stringify(activeProfile)));
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingProfile, setEditingProfile] = useState(null);
 
     useEffect(() => { setLocalProfile(JSON.parse(JSON.stringify(activeProfile))); }, [activeProfile]);
+
+    const handleRecalculateAndUpdateLocal = () => {
+        const updatedProfiles = onRecalculate(); // onRecalculate가 업데이트된 profiles를 반환하도록 수정
+        if (updatedProfiles) {
+            const updatedActiveProfile = updatedProfiles.find(p => p.id === activeProfileId);
+            setLocalProfile(JSON.parse(JSON.stringify(updatedActiveProfile)));
+        }
+    };
 
     const handleProfileChange = (field, value) => { setLocalProfile(prev => ({ ...prev, [field]: value })); };
     const handleLocationChange = (field, value) => setLocalProfile(p => ({ ...p, location: { ...p.location, coords: { ...p.location.coords, [field]: parseFloat(value) || null }}}));
@@ -998,15 +1006,8 @@ const SettingsView = ({ profiles, setProfiles, activeProfile, setActiveProfileId
             <div className="bg-gray-700/50 p-4 rounded-lg space-y-3"><h3 className="text-lg font-semibold text-white">위치 및 시간 설정</h3><div className="form-group"><label className="block text-sm font-medium text-gray-400 mb-2">위치 설정 방식</label><div className="flex flex-wrap gap-2">{[{id:'unit',label:'부대 위치',icon:Compass},{id:'manual',label:'직접 입력',icon:Edit3},{id:'current',label:'현재 위치',icon:MapPin}].map(m=>(<button key={m.id} onClick={()=>handleLocationMethodChange(m.id)} className={`flex items-center space-x-2 px-3 py-2 text-sm rounded-md ${localProfile.location.method === m.id ? 'bg-blue-600 text-white':'bg-gray-600'}`}>{React.createElement(m.icon,{size:16})}<span>{m.label}</span></button>))}</div></div>{localProfile.location.method === 'manual' && (<div className="flex flex-col md:flex-row gap-4 mt-2"><div className="w-full md:w-1/2"><label className="block text-sm font-medium text-gray-400 mb-2">위도</label><input type="number" step="any" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white" value={localProfile.location.coords.lat || ''} onChange={e => handleLocationChange('lat', e.target.value)}/></div><div className="w-full md:w-1/2"><label className="block text-sm font-medium text-gray-400 mb-2">경도</label><input type="number" step="any" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white" value={localProfile.location.coords.lon || ''} onChange={e => handleLocationChange('lon', e.target.value)}/></div></div>)}
             <div className="form-group"><label className="block text-sm font-medium text-gray-400 mb-2">표준 시간</label><div className="flex items-center space-x-2">{[{id:'KST',label:'KST'},{id:'UTC',label:'UTC'},{id:'BOTH',label:'KST/UTC'}].map(t=>(<button key={t.id} onClick={()=>handleProfileChange('timezone', t.id)} className={`px-3 py-2 text-sm rounded-md ${localProfile.timezone===t.id ? 'bg-blue-600 text-white':'bg-gray-600'}`}>{t.label}</button>))}</div></div></div>
             <div className="bg-gray-700/50 p-4 rounded-lg"><h3 className="text-lg font-semibold text-white mb-3">부대 종합 임계값</h3><div className="flex items-center space-x-2 cursor-pointer"><span className={`px-2 py-1 text-xs rounded-md ${localProfile.unitThresholdMode === 'manual' ? 'bg-blue-600':'bg-gray-600'}`} onClick={() => handleProfileChange('unitThresholdMode', 'manual')}>수동</span><span className={`px-2 py-1 text-xs rounded-md ${localProfile.unitThresholdMode === 'auto' ? 'bg-blue-600':'bg-gray-600'}`} onClick={() => handleProfileChange('unitThresholdMode', 'auto')}>자동</span></div>{localProfile.unitThresholdMode === 'manual' ? (<div className="flex items-center space-x-2 mt-2"><input type="range" min="1" max="30" step="0.5" value={localProfile.unitManualThreshold} onChange={e => handleProfileChange('unitManualThreshold', parseFloat(e.target.value))} className="w-full" /><span className="text-cyan-400 font-mono w-16 text-center">{formatNumber(localProfile.unitManualThreshold, 1)}m</span></div>) : (<div className="text-center bg-gray-800 p-2 rounded-md mt-2"><span className="text-gray-400">자동 계산된 임계값: </span><span className="font-bold text-white">{formatNumber(localProfile.unitAutoThreshold) ? `${formatNumber(localProfile.unitAutoThreshold)}m` : 'N/A'}</span></div>)}</div>
-            <div><h3 className="text-lg font-semibold text-white mb-3">주요 장비 설정</h3><div className="space-y-4">{localProfile.equipment.map(eq => (<div key={eq.id} className="bg-gray-700/50 p-4 rounded-lg space-y-4"><div className="flex justify-between items-center"><input type="text" value={eq.name} onChange={e => handleEquipmentChange(eq.id, 'name', e.target.value)} className="bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white" placeholder="장비명" /><button onClick={() => removeEquipment(eq.id)} className="text-red-400 hover:text-red-300 p-2"><Trash2 className="w-5 h-5" /></button></div><div className="flex items-center justify-between"><label className="flex items-center space-x-2 cursor-pointer"><input type="checkbox" checked={eq.usesGeoData} onChange={e => handleEquipmentChange(eq.id, 'usesGeoData', e.target.checked)} className="h-4 w-4 rounded bg-gray-900 border-gray-600 text-cyan-500 focus:ring-cyan-500" /><span>위치 정보 사용</span></label><div className="flex items-center space-x-2 cursor-pointer"><span className={`px-2 py-1 text-xs rounded-md ${eq.thresholdMode === 'manual' ? 'bg-blue-600':'bg-gray-600'}`} onClick={() => handleEquipmentChange(eq.id, 'thresholdMode', 'manual')}>수동</span><span className={`px-2 py-1 text-xs rounded-md ${eq.thresholdMode === 'auto' ? 'bg-blue-600':'bg-gray-600'}`} onClick={() => handleEquipmentChange(eq.id, 'thresholdMode', 'auto')}>자동</span></div></div><div>{eq.thresholdMode === 'manual' ? (<div className="flex items-center space-x-2"><input type="range" min="1" max="30" step="0.5" value={eq.manualThreshold} onChange={e => handleEquipmentChange(eq.id, 'manualThreshold', parseFloat(e.target.value))} className="w-full" /><span className="text-cyan-400 font-mono w-16 text-center">{formatNumber(eq.manualThreshold, 1)}m</span></div>) : (<div className="text-center bg-gray-800 p-2 rounded-md"><span className="text-gray-400">자동 임계값: </span><span className="font-bold text-white">{formatNumber(eq.autoThreshold) ? `${formatNumber(eq.autoThreshold)}m` : '데이터 부족'}</span></div>)}</div></div>))}</div><div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4 mt-4"><button onClick={addEquipment} className="w-full bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><Plus className="w-5 h-5" /><span>장비 추가</span></button><button onClick={onRecalculate} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><BrainCircuit size={20}/><span>자동 임계값 전체 재계산</span></button></div></div>
+            <div><h3 className="text-lg font-semibold text-white mb-3">주요 장비 설정</h3><div className="space-y-4">{localProfile.equipment.map(eq => (<div key={eq.id} className="bg-gray-700/50 p-4 rounded-lg space-y-4"><div className="flex justify-between items-center"><input type="text" value={eq.name} onChange={e => handleEquipmentChange(eq.id, 'name', e.target.value)} className="bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white" placeholder="장비명" /><button onClick={() => removeEquipment(eq.id)} className="text-red-400 hover:text-red-300 p-2"><Trash2 className="w-5 h-5" /></button></div><div className="flex items-center justify-between"><label className="flex items-center space-x-2 cursor-pointer"><input type="checkbox" checked={eq.usesGeoData} onChange={e => handleEquipmentChange(eq.id, 'usesGeoData', e.target.checked)} className="h-4 w-4 rounded bg-gray-900 border-gray-600 text-cyan-500 focus:ring-cyan-500" /><span>위치 정보 사용</span></label><div className="flex items-center space-x-2 cursor-pointer"><span className={`px-2 py-1 text-xs rounded-md ${eq.thresholdMode === 'manual' ? 'bg-blue-600':'bg-gray-600'}`} onClick={() => handleEquipmentChange(eq.id, 'thresholdMode', 'manual')}>수동</span><span className={`px-2 py-1 text-xs rounded-md ${eq.thresholdMode === 'auto' ? 'bg-blue-600':'bg-gray-600'}`} onClick={() => handleEquipmentChange(eq.id, 'thresholdMode', 'auto')}>자동</span></div></div><div>{eq.thresholdMode === 'manual' ? (<div className="flex items-center space-x-2"><input type="range" min="1" max="30" step="0.5" value={eq.manualThreshold} onChange={e => handleEquipmentChange(eq.id, 'manualThreshold', parseFloat(e.target.value))} className="w-full" /><span className="text-cyan-400 font-mono w-16 text-center">{formatNumber(eq.manualThreshold, 1)}m</span></div>) : (<div className="text-center bg-gray-800 p-2 rounded-md"><span className="text-gray-400">자동 임계값: </span><span className="font-bold text-white">{formatNumber(eq.autoThreshold) ? `${formatNumber(eq.autoThreshold)}m` : '데이터 부족'}</span></div>)}</div></div>))}</div><div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4 mt-4"><button onClick={addEquipment} className="w-full bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><Plus className="w-5 h-5" /><span>장비 추가</span></button><button onClick={handleRecalculateAndUpdateLocal} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><BrainCircuit size={20}/><span>자동 임계값 전체 재계산</span></button></div></div>
         </div><div className="mt-8 flex justify-end"><button onClick={handleSave} className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-6 rounded-lg flex items-center space-x-2"><Save className="w-5 h-5" /><span>저장</span></button></div></div>);
-};
-const FeedbackView = ({ equipmentList, onSubmit, goBack }) => {
-    const [log, setLog] = useState({ startTime: toLocalISOString(new Date(new Date().getTime() - 3600*1000)), endTime: toLocalISOString(new Date()), equipment: equipmentList.length > 0 ? equipmentList[0].name : '', successScore: 10, gnssErrorData: null });
-    const [fileName, setFileName] = useState("");
-    const handleFileChange = (e) => { const file = e.target.files[0]; if (!file) return; setFileName(file.name); const reader = new FileReader(); reader.onload = (event) => { try { const text = event.target.result; const lines = text.split(/\r\n|\n/).filter(l => l.trim() !== ''); if (lines.length < 2) throw new Error("CSV에 데이터가 없습니다."); const header = lines[0].trim().split(',').map(h => h.trim()); const hasGeo = header.includes('lat') && header.includes('lon'); if (header[0] !== 'date' || header[1] !== 'error_rate') throw new Error("헤더는 'date,error_rate'로 시작해야 합니다."); const data = lines.slice(1).map((line, i) => { const vals = line.split(','); const err = parseFloat(vals[1]); if (isNaN(err)) throw new Error(`${i+2}번째 줄 error_rate가 숫자가 아닙니다.`); const entry = { date: vals[0].trim(), error_rate: err }; if (hasGeo) { entry.lat = parseFloat(vals[2]); entry.lon = parseFloat(vals[3]); if (isNaN(entry.lat) || isNaN(entry.lon)) throw new Error(`${i+2}번째 줄 lat/lon이 숫자가 아닙니다.`); } return entry; }); setLog(prev => ({ ...prev, gnssErrorData: data })); } catch (error) { alert(`CSV 파싱 오류: ${error.message}`); setFileName(""); e.target.value = null; } }; reader.readAsText(file); };
-    const handleSubmit = (e) => { e.preventDefault(); if (!log.equipment || !log.startTime || !log.endTime) { alert("필수 항목을 모두 입력해주세요."); return; } onSubmit(log); };
-    return (<div className="bg-gray-800 p-6 md:p-8 rounded-xl border border-gray-700 max-w-2xl mx-auto"><div className="flex items-center mb-6"><button onClick={goBack} className="mr-4 p-2 rounded-full hover:bg-gray-700"><ArrowLeft className="w-6 h-6" /></button><h2 className="text-xl md:text-2xl font-bold text-white">작전 피드백 입력</h2></div><form onSubmit={handleSubmit} className="space-y-6"><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-gray-400 mb-2">작전 시작 시간</label><input type="datetime-local" value={log.startTime} onChange={e => setLog({ ...log, startTime: e.target.value })} className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white" /></div><div><label className="block text-sm font-medium text-gray-400 mb-2">작전 종료 시간</label><input type="datetime-local" value={log.endTime} onChange={e => setLog({ ...log, endTime: e.target.value })} className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white" /></div></div><div><label className="block text-sm font-medium text-gray-400 mb-2">운용 장비</label><select value={log.equipment} onChange={e => setLog({ ...log, equipment: e.target.value })} className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white"><option value="" disabled>장비를 선택하세요</option>{equipmentList.map(eq => <option key={eq.id} value={eq.name}>{eq.name}</option>)}</select></div><div><label className="block text-sm font-medium text-gray-400 mb-2">GNSS 기반 작전 성공도</label><div className="flex items-center gap-4 bg-gray-900 p-3 rounded-lg"><input type="range" min="1" max="10" value={log.successScore} onChange={e => setLog({ ...log, successScore: parseInt(e.target.value)})} className="w-full h-2 bg-gray-700 rounded-lg" /><span className={`font-bold text-lg w-32 shrink-0 text-center ${getSuccessScoreInfo(log.successScore).color}`}>{log.successScore}점 ({getSuccessScoreInfo(log.successScore).label})</span></div></div><div><label className="block text-sm font-medium text-gray-400 mb-2">GNSS 오차 데이터 (선택)</label><label htmlFor="csv-upload" className="w-full bg-gray-700 hover:bg-gray-600 text-cyan-400 font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2 cursor-pointer"><UploadCloud className="w-5 h-5" /><span>{fileName || "CSV (date,error_rate[,lat,lon])"}</span></label><input id="csv-upload" type="file" accept=".csv" onChange={handleFileChange} className="hidden" /></div><div className="pt-4 flex justify-end"><button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg flex items-center space-x-2"><BotMessageSquare className="w-5 h-5" /><span>피드백 제출</span></button></div></form></div>);
 };
 const DeveloperTestView = ({ setLogs, profile, setForecastData, setAlertInfo, goBack }) => {
     const generateMockLogs = () => {
@@ -1601,49 +1602,50 @@ export default function App() {
     const deleteTodo = (todoId) => { setTodoList(prev => prev.filter(todo => todo.id !== todoId)); };
 
 
-    const handleRecalculateThresholds = () => {
-        if (!missionLogs || missionLogs.length === 0) {
-            alert("분석할 피드백 데이터가 부족합니다.");
-            return;
-        }
+    const handleRecalculateThresholds = () => {
+        if (!missionLogs || missionLogs.length === 0) {
+            alert("분석할 피드백 데이터가 부족합니다.");
+            return null;
+        }
 
-        const updatedProfiles = allProfiles.map(profile => {
-            const equipmentWithNewThresholds = profile.equipment.map(eq => {
-                const equipmentLogs = missionLogs.filter(log => log.equipment === eq.name);
-                const errRatesOnFailure = equipmentLogs
-                    .filter(l => l.successScore < 8 && l.gnssErrorData)
-                    .flatMap(l => l.gnssErrorData.map(d => d.error_rate));
+        const updatedProfiles = allProfiles.map(profile => {
+            const equipmentWithNewThresholds = profile.equipment.map(eq => {
+                const equipmentLogs = missionLogs.filter(log => log.equipment === eq.name);
+                const errRatesOnFailure = equipmentLogs
+                    .filter(l => l.successScore < 8 && l.gnssErrorData)
+                    .flatMap(l => l.gnssErrorData.map(d => d.error_rate));
 
-                if (errRatesOnFailure.length >= 10) { // 최소 10개의 실패/보통 데이터 포인트가 있을 때만 계산
-                    const sortedErrors = [...errRatesOnFailure].sort((a, b) => a - b);
-                    const p75Index = Math.floor(sortedErrors.length * 0.75);
-                    const newAutoThreshold = sortedErrors[p75Index];
-                    return { ...eq, autoThreshold: newAutoThreshold };
-                }
-                return { ...eq, autoThreshold: null }; // 데이터 부족 시 null로 초기화
-            });
+                if (errRatesOnFailure.length >= 10) {
+                    const sortedErrors = [...errRatesOnFailure].sort((a, b) => a - b);
+                    const p75Index = Math.floor(sortedErrors.length * 0.75);
+                    const newAutoThreshold = sortedErrors[p75Index];
+                    return { ...eq, autoThreshold: newAutoThreshold };
+                }
+                return { ...eq, autoThreshold: null };
+            });
 
-            const validAutoThresholds = equipmentWithNewThresholds
-                .map(eq => eq.autoThreshold)
-                .filter(th => th !== null);
+            const validAutoThresholds = equipmentWithNewThresholds
+                .map(eq => eq.autoThreshold)
+                .filter(th => th !== null);
 
-            const newUnitAutoThreshold = validAutoThresholds.length > 0
-                ? validAutoThresholds.reduce((sum, th) => sum + th, 0) / validAutoThresholds.length
-                : null;
+            const newUnitAutoThreshold = validAutoThresholds.length > 0
+                ? validAutoThresholds.reduce((sum, th) => sum + th, 0) / validAutoThresholds.length
+                : null;
 
-            return {
-                ...profile,
-                equipment: equipmentWithNewThresholds,
-                unitAutoThreshold: newUnitAutoThreshold,
-            };
-        });
+            return {
+                ...profile,
+                equipment: equipmentWithNewThresholds,
+                unitAutoThreshold: newUnitAutoThreshold,
+            };
+        });
 
-        setAllProfiles(updatedProfiles);
-        alert("자동 임계값 재계산이 완료되었습니다. 변경사항을 확인 후 저장해주세요.");
-    };
+        setAllProfiles(updatedProfiles);
+        alert("자동 임계값 재계산이 완료되었습니다. 변경사항을 확인 후 저장해주세요.");
+        return updatedProfiles;
+    };
 
-    const unitAutoThreshold = useMemo(() => activeProfile.equipment.length > 0 ? Math.min(...activeProfile.equipment.map(eq => eq.thresholdMode === 'auto' && eq.autoThreshold ? eq.autoThreshold : eq.manualThreshold)) : 10.0, [activeProfile.equipment]);
-    const activeUnitThreshold = activeProfile.unitThresholdMode === 'auto' ? unitAutoThreshold : activeProfile.unitManualThreshold;
+    const unitAutoThreshold = useMemo(() => activeProfile.unitAutoThreshold || 20.0, [activeProfile.unitAutoThreshold]);
+    const activeUnitThreshold = activeProfile.unitThresholdMode === 'auto' ? unitAutoThreshold : activeProfile.unitManualThreshold;
 
     if (!activeProfile) {
         return <div className="bg-gray-900 text-gray-200 min-h-screen flex items-center justify-center">프로필 정보를 불러오는 데 실패했습니다. 앱을 초기화하거나 다시 시도해주세요.</div>
