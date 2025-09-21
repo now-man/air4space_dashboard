@@ -1017,6 +1017,85 @@ const FeedbackView = ({ equipmentList, onSubmit, goBack }) => {
     return (<div className="bg-gray-800 p-6 md:p-8 rounded-xl border border-gray-700 max-w-2xl mx-auto"><div className="flex items-center mb-6"><button onClick={goBack} className="mr-4 p-2 rounded-full hover:bg-gray-700"><ArrowLeft className="w-6 h-6" /></button><h2 className="text-xl md:text-2xl font-bold text-white">작전 피드백 입력</h2></div><form onSubmit={handleSubmit} className="space-y-6"><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-gray-400 mb-2">작전 시작 시간</label><input type="datetime-local" value={log.startTime} onChange={e => setLog({ ...log, startTime: e.target.value })} className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white" /></div><div><label className="block text-sm font-medium text-gray-400 mb-2">작전 종료 시간</label><input type="datetime-local" value={log.endTime} onChange={e => setLog({ ...log, endTime: e.target.value })} className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white" /></div></div><div><label className="block text-sm font-medium text-gray-400 mb-2">운용 장비</label><select value={log.equipment} onChange={e => setLog({ ...log, equipment: e.target.value })} className="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white"><option value="" disabled>장비를 선택하세요</option>{equipmentList.map(eq => <option key={eq.id} value={eq.name}>{eq.name}</option>)}</select></div><div><label className="block text-sm font-medium text-gray-400 mb-2">GNSS 기반 작전 성공도</label><div className="flex items-center gap-4 bg-gray-900 p-3 rounded-lg"><input type="range" min="1" max="10" value={log.successScore} onChange={e => setLog({ ...log, successScore: parseInt(e.target.value)})} className="w-full h-2 bg-gray-700 rounded-lg" /><span className={`font-bold text-lg w-32 shrink-0 text-center ${getSuccessScoreInfo(log.successScore).color}`}>{log.successScore}점 ({getSuccessScoreInfo(log.successScore).label})</span></div></div><div><label className="block text-sm font-medium text-gray-400 mb-2">GNSS 오차 데이터 (선택)</label><label htmlFor="csv-upload" className="w-full bg-gray-700 hover:bg-gray-600 text-cyan-400 font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2 cursor-pointer"><UploadCloud className="w-5 h-5" /><span>{fileName || "CSV (date,error_rate[,lat,lon])"}</span></label><input id="csv-upload" type="file" accept=".csv" onChange={handleFileChange} className="hidden" /></div><div className="pt-4 flex justify-end"><button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg flex items-center space-x-2"><BotMessageSquare className="w-5 h-5" /><span>피드백 제출</span></button></div></form></div>);
 };
 const DeveloperTestView = ({ setLogs, profile, setForecastData, setAlertInfo, goBack }) => {
+    // --- 샘플 CSV 데이터 ---
+    const csvContentBasic = `date,error_rate
+2025-09-23T10:00:00.000Z,5.88
+2025-09-23T10:01:00.000Z,6.91
+2025-09-23T10:02:00.000Z,7.34
+2025-09-23T10:03:00.000Z,8.96
+2025-09-23T10:04:00.000Z,8.31
+2025-09-23T10:05:00.000Z,8.74
+2025-09-23T10:06:00.000Z,9.02
+2025-09-23T10:07:00.000Z,8.15
+2025-09-23T10:08:00.000Z,7.57
+2025-09-23T10:09:00.000Z,7.99
+2025-09-23T10:10:00.000Z,6.60
+2025-09-23T10:11:00.000Z,5.82
+2025-09-23T10:12:00.000Z,4.55
+2025-09-23T10:13:00.000Z,4.21
+2025-09-23T10:14:00.000Z,3.31
+2025-09-23T10:15:00.000Z,3.95
+2025-09-23T10:16:00.000Z,3.09
+2025-09-23T10:17:00.000Z,3.11
+2025-09-23T10:18:00.000Z,4.42
+2025-09-23T10:19:00.000Z,4.60
+2025-09-23T10:20:00.000Z,5.81
+2025-09-23T10:21:00.000Z,6.43
+2025-09-23T10:22:00.000Z,7.74
+2025-09-23T10:23:00.000Z,7.18
+2025-09-23T10:24:00.000Z,8.01
+2025-09-23T10:25:00.000Z,8.42
+2025-09-23T10:26:00.000Z,7.85
+2025-09-23T10:27:00.000Z,8.12
+2025-09-23T10:28:00.000Z,7.31
+2025-09-23T10:29:00.000Z,6.13
+2025-09-23T10:30:00.000Z,5.92`;
+
+    const csvContentGeo = `date,error_rate,lat,lon
+2025-09-23T15:00:00.000Z,5.21,36.721,127.491
+2025-09-23T15:01:00.000Z,6.34,36.753,127.448
+2025-09-23T15:02:00.000Z,7.69,36.784,127.406
+2025-09-23T15:03:00.000Z,8.01,36.814,127.363
+2025-09-23T15:04:00.000Z,8.88,36.843,127.320
+2025-09-23T15:05:00.000Z,9.15,36.872,127.276
+2025-09-23T15:06:00.000Z,8.43,36.899,127.232
+2025-09-23T15:07:00.000Z,8.51,36.925,127.187
+2025-09-23T15:08:00.000Z,7.99,36.951,127.141
+2025-09-23T15:09:00.000Z,6.84,36.975,127.095
+2025-09-23T15:10:00.000Z,6.01,36.998,127.048
+2025-09-23T15:11:00.000Z,4.72,37.021,127.001
+2025-09-23T15:12:00.000Z,4.33,37.042,126.953
+2025-09-23T15:13:00.000Z,3.58,37.063,126.904
+2025-09-23T15:14:00.000Z,3.87,37.082,126.855
+2025-09-23T15:15:00.000Z,3.01,37.101,126.805
+2025-09-23T15:16:00.000Z,3.99,37.118,126.755
+2025-09-23T15:17:00.000Z,4.68,37.135,126.704
+2025-09-23T15:18:00.000Z,5.11,37.150,126.652
+2025-09-23T15:19:00.000Z,6.43,37.165,126.600
+2025-09-23T15:20:00.000Z,7.01,37.178,126.547
+2025-09-23T15:21:00.000Z,7.85,37.191,126.494
+2025-09-23T15:22:00.000Z,8.23,37.202,126.440
+2025-09-23T15:23:00.000Z,8.99,37.213,126.386
+2025-09-23T15:24:00.000Z,8.34,37.222,126.331
+2025-09-23T15:25:00.000Z,8.08,37.231,126.276
+2025-09-23T15:26:00.000Z,7.55,37.238,126.220
+2025-09-23T15:27:00.000Z,6.72,37.245,126.163
+2025-09-23T15:28:00.000Z,6.81,37.251,126.106
+2025-09-23T15:29:00.000Z,5.65,37.256,126.049
+2025-09-23T15:30:00.000Z,4.99,37.260,125.991`;
+
+    // --- 파일 다운로드 함수 ---
+    const downloadCSV = (content, fileName) => {
+        const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute("download", fileName);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
     const generateMockLogs = () => {
         if (!window.confirm("기존 피드백을 삭제하고, 최근 100일간의 시연용 테스트 데이터를 대량 생성합니까?")) return;
         const newLogs = [];
@@ -1125,6 +1204,14 @@ const DeveloperTestView = ({ setLogs, profile, setForecastData, setAlertInfo, go
                 <div className="flex space-x-4">
                     <button onClick={generateMockLogs} className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><TestTube2 size={20} /><span>테스트 데이터 생성</span></button>
                     <button onClick={clearLogs} className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><Eraser size={20} /><span>모든 데이터 삭제</span></button>
+                </div>
+            </div>
+            {/* --- 샘플 데이터 다운로드 섹션 추가 --- */}
+            <div>
+                <h3 className="text-lg font-semibold text-white mb-3">샘플 데이터 다운로드</h3>
+                <div className="flex space-x-4">
+                    <button onClick={() => downloadCSV(csvContentBasic, 'recon_mission_0923_v2.csv')} className="w-full bg-cyan-600 hover:bg-cyan-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><UploadCloud size={20} /><span>기본 로그 (.csv)</span></button>
+                    <button onClick={() => downloadCSV(csvContentGeo, 'strike_mission_geo_0923_v2.csv')} className="w-full bg-cyan-600 hover:bg-cyan-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2"><UploadCloud size={20} /><span>상세 로그 (.csv)</span></button>
                 </div>
             </div>
             <div>
