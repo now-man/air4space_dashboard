@@ -12,6 +12,15 @@ import 'react-day-picker/dist/style.css';
 const formatNumber = (num, places = 2) => num !== null && num !== undefined ? num.toFixed(places) : 'N/A';
 const getErrorColor = (error, threshold = 10.0) => { if (error > threshold) return '#f87171'; if (error > threshold * 0.7) return '#facc15'; return '#4ade80'; };
 const getSuccessScoreInfo = (score) => { if (score >= 8) return { label: "성공", color: "text-green-400", dotClass: "bg-green-500" }; if (score >= 4 && score < 8) return { label: "보통", color: "text-yellow-400", dotClass: "bg-yellow-500" }; return { label: "실패", color: "text-red-400", dotClass: "bg-red-500" }; };
+
+
+const getKpStatus = (kp) => {
+    if (kp < 4) return { text: "안정", color: "text-green-400" };
+    if (kp < 6) return { text: "보통", color: "text-yellow-400" };
+    return { text: "불안", color: "text-red-400" };
+};
+
+
 const formatDate = (dateString, format = 'full') => { if (!dateString) return 'N/A'; const date = new Date(dateString); const options = { full: { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }, time: { hour: '2-digit', minute: '2-digit', hour12: false }, date: { year: 'numeric', month: '2-digit', day: '2-digit' }}; return new Intl.DateTimeFormat('ko-KR', options[format]).format(date); };
 const toLocalISOString = (date) => new Date(date.getTime() - (date.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
 const getPointOnBezierCurve = (t, p0, p1, p2) => { const [x0, y0] = p0; const [x1, y1] = p1; const [x2, y2] = p2; const u = 1 - t; const tt = t * t; const uu = u * u; const x = uu * x0 + 2 * u * t * x1 + tt * x2; const y = uu * y0 + 2 * u * t * y1 + tt * y2; return [x, y]; };
@@ -661,12 +670,6 @@ const OptimalTimeRecommender = ({ allForecastData, onRecommendation, activeUnitT
     const [searchEnd, setSearchEnd] = useState(() => toLocalISOString(new Date(new Date().getTime() + 48 * 3600 * 1000)));
     const [duration, setDuration] = useState(3);
     const [result, setResult] = useState(null);
-
-    const getKpStatus = (kp) => {
-        if (kp < 4) return { text: "안정", color: "text-green-400" };
-        if (kp < 6) return { text: "보통", color: "text-yellow-400" };
-        return { text: "불안", color: "text-red-400" };
-    };
 
     const handleRecommend = () => {
         const searchStartTs = new Date(searchStart).getTime();
